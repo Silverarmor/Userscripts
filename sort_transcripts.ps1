@@ -6,11 +6,16 @@ Get-ChildItem -Path $PSScriptRoot -Directory | Where-Object { $_.Name -ne "Clean
     $folder = $_
     $folderName = $folder.Name
     
-    # 1. Clean the folder name to "Course - Date"
-    if ($folderName -match "^(.*?)\s+L01C\s+-\s+(.{10})") {
-        $baseNewName = "$($Matches[1]) - $($Matches[2])"
+    # Updated Regex: 
+    # ([A-Z]+\s\d{3}) -> Finds any uppercase letters, a space, and 3 digits (e.g., ENVENG 200)
+    # .*?-\s+        -> Skips middle text until the dash
+    # (.{10})        -> Grabs the 10-character date
+    if ($folderName -match "([A-Z]+\s\d{3}).*?-\s+(.{10})") {
+        $courseCode = $Matches[1]
+        $datePart = $Matches[2]
+        $baseNewName = "$courseCode - $datePart"
         
-        # 2. Files to Keep and Move
+        # Files to Keep and Move
         $keepFiles = @("transcription.txt", "transcription.srt")
         foreach ($fileName in $keepFiles) {
             $oldPath = Join-Path $folder.FullName $fileName
@@ -18,24 +23,26 @@ Get-ChildItem -Path $PSScriptRoot -Directory | Where-Object { $_.Name -ne "Clean
                 $extension = [System.IO.Path]::GetExtension($fileName)
                 $destPath = Join-Path $outputDir "$baseNewName$extension"
                 Move-Item -Path $oldPath -Destination $destPath -Force
+                Write-Host "Moved: $baseNewName$extension" -ForegroundColor Green
             }
         }
         
-        # 3. Delete the specific unwanted files
+        # Files to Delete
         $filesToDelete = @("log.txt", "metadata.txt", "transcription.json", "transcription_maxqda.txt", "transcription_timestamps.txt")
         foreach ($delFile in $filesToDelete) {
             $delPath = Join-Path $folder.FullName $delFile
             if (Test-Path $delPath) { Remove-Item -Path $delPath -Force }
         }
 
-        # 4. Remove the folder if it's now empty (or only contains ignored files)
+        # Remove folder if empty
         $remaining = Get-ChildItem -Path $folder.FullName
         if ($null -eq $remaining) {
             Remove-Item -Path $folder.FullName -Recurse -Force
-            Write-Host "Processed and removed: $folderName" -ForegroundColor Green
         }
+    } else {
+        Write-Host "Skipped (No match): $folderName" -ForegroundColor Yellow
     }
 }
 
-Write-Host "Done! Files moved to: $outputDir" -ForegroundColor Cyan
+Write-Host "`nCleanup Complete! Files are in: $outputDir" -ForegroundColor Cyan
 Pause
