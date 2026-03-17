@@ -53,7 +53,7 @@ Get-ChildItem -Filter "*.srt" | ForEach-Object {
 
         # 3. Rename the original SRT file
         $tempSrtPath = Join-Path -Path $_.DirectoryName -ChildPath $newSrtName
-        Rename-Item -Path $originalFile -NewName $newSrtName
+        Rename-Item -LiteralPath $originalFile -NewName $newSrtName
 
         # 4. Create the target course folder if it doesn't exist
         if (-not (Test-Path -Path $folderPath)) {
@@ -61,11 +61,12 @@ Get-ChildItem -Filter "*.srt" | ForEach-Object {
         }
 
         # 5. Move both files into the target folder (Overwrites if a file with the same name already exists)
-        Move-Item -Path $tempSrtPath -Destination $folderPath -Force
-        Move-Item -Path $tempTxtPath -Destination $folderPath -Force
+        Move-Item -LiteralPath $tempSrtPath -Destination $folderPath -Force
+        Move-Item -LiteralPath $tempTxtPath -Destination $folderPath -Force
         
         Write-Host "Processed and moved: $newBaseName" -ForegroundColor Green
     } else {
         Write-Host "Skipped: $fileName (Did not match the expected naming format)" -ForegroundColor Yellow
     }
 }
+pause
