@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Canvas Quiz - Copy Question
 // @namespace    https://canvas.auckland.ac.nz/
-// @version      0.2.3
+// @version      0.3.0
 // @description  Adds a button beside each Canvas quiz question number to copy the question text and answer options.
 // @match        https://canvas.auckland.ac.nz/*
 // @match        file:///*
@@ -15,6 +15,9 @@
 
   const BUTTON_CLASS = "tm-copy-question";
   const COPIED_CLASS = "tm-copy-question--copied";
+  const HIDDEN_CLASS = "tm-copy-question--hidden";
+  const TOGGLE_BUTTON_CLASS = "tm-copy-question-toggle";
+  let copyButtonsVisible = true;
 
   function normalizeText(text) {
     return text.replace(/\s+/g, " ").trim();
@@ -230,6 +233,32 @@
         border-color: #0b874b;
         color: #0b874b;
       }
+
+      .${BUTTON_CLASS}.${HIDDEN_CLASS} {
+        display: none !important;
+      }
+
+      .${TOGGLE_BUTTON_CLASS} {
+        position: fixed;
+        top: 10px;
+        right: 14px;
+        z-index: 10000;
+        padding: 6px 10px;
+        border: 1px solid #8f98a3;
+        border-radius: 4px;
+        background: #fff;
+        color: #2d3b45;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.4;
+      }
+
+      .${TOGGLE_BUTTON_CLASS}:hover {
+        background: #f5f7f9;
+        border-color: #6b7785;
+      }
     `;
 
     if (typeof GM_addStyle === "function") {
@@ -240,6 +269,36 @@
     const styleEl = document.createElement("style");
     styleEl.textContent = css;
     document.head.appendChild(styleEl);
+  }
+
+  function updateCopyButtonVisibility() {
+    document.querySelectorAll(`.${BUTTON_CLASS}`).forEach((button) => {
+      button.classList.toggle(HIDDEN_CLASS, !copyButtonsVisible);
+    });
+
+    const toggleButton = document.querySelector(`.${TOGGLE_BUTTON_CLASS}`);
+    if (toggleButton) {
+      toggleButton.textContent = copyButtonsVisible ? "Hide copy buttons" : "Show copy buttons";
+      toggleButton.setAttribute("aria-pressed", String(!copyButtonsVisible));
+    }
+  }
+
+  function addToggleButton() {
+    if (document.querySelector(`.${TOGGLE_BUTTON_CLASS}`)) {
+      return;
+    }
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = TOGGLE_BUTTON_CLASS;
+    button.title = "Toggle all question copy buttons";
+    button.addEventListener("click", () => {
+      copyButtonsVisible = !copyButtonsVisible;
+      updateCopyButtonVisibility();
+    });
+
+    document.body.appendChild(button);
+    updateCopyButtonVisibility();
   }
 
   function addCopyButtons() {
@@ -275,15 +334,20 @@
 
       questionName.insertAdjacentElement("afterend", button);
     });
+
+    updateCopyButtonVisibility();
   }
 
   function start() {
     addStyles();
-    addCopyButtons();
 
     if (!document.body) {
+      window.setTimeout(start, 100);
       return;
     }
+
+    addToggleButton();
+    addCopyButtons();
 
     const observer = new MutationObserver(addCopyButtons);
     observer.observe(document.body, { childList: true, subtree: true });
