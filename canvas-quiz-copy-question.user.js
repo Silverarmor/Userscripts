@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Canvas Quiz - Copy Question
 // @namespace    https://canvas.auckland.ac.nz/
-// @version      0.3.0
+// @version      0.3.1
 // @description  Adds a button beside each Canvas quiz question number to copy the question text and answer options.
 // @match        https://canvas.auckland.ac.nz/*
 // @match        file:///*
@@ -258,6 +258,12 @@
       .${TOGGLE_BUTTON_CLASS}:hover {
         background: #f5f7f9;
         border-color: #6b7785;
+      }
+
+      .display_question .answers select.question_input {
+        width: 180% !important;
+        min-width: 320px;
+        max-width: calc(100vw - 96px) !important;
       }
     `;
 
