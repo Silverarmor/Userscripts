@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Canvas Quiz - Copy Question
 // @namespace    https://canvas.auckland.ac.nz/
-// @version      0.3.4
+// @version      0.3.5
 // @description  Adds a button beside each Canvas quiz question number to copy the question text and answer options.
 // @match        https://canvas.auckland.ac.nz/courses/*/quizzes/*/take*
 // @match        file:///*
@@ -19,7 +19,9 @@
   const COPIED_CLASS = "tm-copy-question--copied";
   const HIDDEN_CLASS = "tm-copy-question--hidden";
   const TOGGLE_BUTTON_CLASS = "tm-copy-question-toggle";
+  const MAX_SETUP_ATTEMPTS = 30;
   let copyButtonsVisible = true;
+  let setupAttempts = 0;
 
   function normalizeText(text) {
     return text.replace(/\s+/g, " ").trim();
@@ -211,6 +213,10 @@
   }
 
   function addStyles() {
+    if (document.getElementById("tm-copy-question-styles")) {
+      return;
+    }
+
     const css = `
       .${BUTTON_CLASS} {
         margin-left: 10px;
@@ -275,6 +281,7 @@
     }
 
     const styleEl = document.createElement("style");
+    styleEl.id = "tm-copy-question-styles";
     styleEl.textContent = css;
     document.head.appendChild(styleEl);
   }
@@ -310,7 +317,9 @@
   }
 
   function addCopyButtons() {
-    getQuestionElements().forEach((questionEl) => {
+    const questionElements = getQuestionElements();
+
+    questionElements.forEach((questionEl) => {
       const questionName = getQuestionNameEl(questionEl);
 
       if (!questionName || questionName.parentElement.querySelector(`.${BUTTON_CLASS}`)) {
@@ -344,22 +353,27 @@
     });
 
     updateCopyButtonVisibility();
+    return questionElements.length;
   }
 
   function start() {
-    addStyles();
-
-    if (!document.body) {
-      window.setTimeout(start, 100);
+    if (!document.body || !document.head) {
+      window.setTimeout(start, 250);
       return;
     }
 
-    addToggleButton();
-    addCopyButtons();
+    setupAttempts += 1;
+    addStyles();
 
-    const observer = new MutationObserver(addCopyButtons);
-    observer.observe(document.body, { childList: true, subtree: true });
-    window.setInterval(addCopyButtons, 2000);
+    const questionCount = addCopyButtons();
+    if (questionCount > 0) {
+      addToggleButton();
+      return;
+    }
+
+    if (setupAttempts < MAX_SETUP_ATTEMPTS) {
+      window.setTimeout(start, 500);
+    }
   }
 
   if (document.readyState === "loading") {
