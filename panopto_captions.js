@@ -5,6 +5,9 @@
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
+// @homepageURL  https://github.com/Silverarmor/Userscripts
+// @updateURL    https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto_captions.js
+// @downloadURL  https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto_captions.js
 // @grant        unsafeWindow
 // @grant        GM_addStyle
 // @grant        GM_setValue
