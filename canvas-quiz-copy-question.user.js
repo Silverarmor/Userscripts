@@ -1,10 +1,9 @@
 // ==UserScript==
 // @name         Canvas Quiz - Copy Question
 // @namespace    https://canvas.auckland.ac.nz/
-// @version      0.3.5
+// @version      0.3.6
 // @description  Adds a button beside each Canvas quiz question number to copy the question text and answer options.
 // @match        https://canvas.auckland.ac.nz/courses/*/quizzes/*/take*
-// @match        file:///*
 // @updateURL    https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas-quiz-copy-question.user.js
 // @downloadURL  https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas-quiz-copy-question.user.js
 // @run-at       document-idle
