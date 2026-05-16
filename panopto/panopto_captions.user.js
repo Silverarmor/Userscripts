@@ -6,8 +6,8 @@
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
 // @homepageURL  https://github.com/Silverarmor/Userscripts
-// @updateURL    https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto_captions.js
-// @downloadURL  https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto_captions.js
+// @updateURL    https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto/panopto_captions.user.js
+// @downloadURL  https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto/panopto_captions.user.js
 // @grant        unsafeWindow
 // @grant        GM_addStyle
 // @grant        GM_setValue

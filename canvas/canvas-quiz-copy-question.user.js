@@ -4,8 +4,8 @@
 // @version      0.3.6
 // @description  Adds a button beside each Canvas quiz question number to copy the question text and answer options.
 // @match        https://canvas.auckland.ac.nz/courses/*/quizzes/*/take*
-// @updateURL    https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas-quiz-copy-question.user.js
-// @downloadURL  https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas-quiz-copy-question.user.js
+// @updateURL    https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas/canvas-quiz-copy-question.user.js
+// @downloadURL  https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas/canvas-quiz-copy-question.user.js
 // @run-at       document-idle
 // @grant        GM_addStyle
 // @grant        GM_setClipboard
