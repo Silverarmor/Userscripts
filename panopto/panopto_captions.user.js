@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.11
+// @version      0.1.12
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.11");
+    console.log("[PanoptoCC] Script booting at v0.1.12");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -452,6 +452,26 @@
         searchRegion.classList.toggle("custom-srt-has-query", !!searchInput.value.trim());
     }
 
+    function lockCustomSearchControls() {
+        const searchPaneHeader = document.querySelector("#searchPaneHeader");
+        const searchTypeSelect = document.querySelector("#searchTypeSelect");
+        const searchSortSelect = document.querySelector("#searchSortSelect");
+
+        if (searchPaneHeader) searchPaneHeader.classList.add("custom-srt-controls-locked");
+        if (searchTypeSelect) {
+            searchTypeSelect.value = "";
+            searchTypeSelect.disabled = true;
+            searchTypeSelect.tabIndex = -1;
+            searchTypeSelect.setAttribute("aria-hidden", "true");
+        }
+        if (searchSortSelect) {
+            searchSortSelect.value = "time";
+            searchSortSelect.disabled = true;
+            searchSortSelect.tabIndex = -1;
+            searchSortSelect.setAttribute("aria-hidden", "true");
+        }
+    }
+
     function shouldHandleCustomSearch() {
         if (!isCustomSrtActive || !Array.isArray(injectedCaptions)) return false;
 
@@ -507,6 +527,7 @@
         searchInput.placeholder = "Search custom SRT captions";
         if (clearButton) clearButton.title = "Clear custom SRT search";
         updateSearchClearButton();
+        lockCustomSearchControls();
         searchInput.addEventListener("input", updateSearchClearButton, true);
         searchInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter") runCustomSearch(e);
@@ -625,6 +646,7 @@
     function startObservers() {
         const observer = new MutationObserver(() => {
             initCustomSearch();
+            if (isCustomSrtActive) lockCustomSearchControls();
             initJumpToCurrentCaptionButton();
 
             const headerRight = document.querySelector("#header-right-react .css-h26irz");
@@ -648,6 +670,7 @@
         });
         observer.observe(document.body, { childList: true, subtree: true });
         initCustomSearch();
+        if (isCustomSrtActive) lockCustomSearchControls();
         initJumpToCurrentCaptionButton();
     }
 
@@ -670,6 +693,13 @@
         }
         #searchRegion.custom-srt-search-active:not(.custom-srt-has-query) #clearButton {
             display: none !important;
+        }
+        #searchPaneHeader.custom-srt-controls-locked #searchTypeSelect,
+        #searchPaneHeader.custom-srt-controls-locked #searchSortSelect {
+            display: none !important;
+        }
+        #searchPaneHeader.custom-srt-controls-locked {
+            min-height: 0 !important;
         }
         #transcriptPaneHeader .event-tab-pane-header {
             align-items: center !important;
