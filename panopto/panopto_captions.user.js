@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.9
+// @version      0.1.10
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.9");
+    console.log("[PanoptoCC] Script booting at v0.1.10");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -200,6 +200,30 @@
             .sort((a, b) => captionStartTime(a.caption) - captionStartTime(b.caption));
     }
 
+    function getCaptionEndTime(caption) {
+        return captionStartTime(caption) + (Number(caption && caption.CaptionDuration) || 0);
+    }
+
+    function findCaptionAtTime(seconds) {
+        if (!Array.isArray(injectedCaptions) || !injectedCaptions.length) return null;
+
+        const time = Math.max(0, Number(seconds) || 0);
+        const indexedCaptions = injectedCaptions.map((caption, index) => ({ caption, index }));
+        const activeCaption = indexedCaptions.find(({ caption }) => {
+            const start = captionStartTime(caption);
+            const end = getCaptionEndTime(caption);
+            return time >= start && time <= Math.max(start, end);
+        });
+        if (activeCaption) return activeCaption;
+
+        const previousCaption = indexedCaptions
+            .filter(({ caption }) => captionStartTime(caption) <= time)
+            .sort((a, b) => captionStartTime(b.caption) - captionStartTime(a.caption))[0];
+        if (previousCaption) return previousCaption;
+
+        return indexedCaptions[0];
+    }
+
     function getTranscriptRows() {
         return Array.from(document.querySelectorAll("#transcriptTabPane li[id^='UserCreatedTranscript-']"));
     }
@@ -290,17 +314,18 @@
         row.classList.add("custom-srt-caption-search-match");
     }
 
-    function activateCustomCaptionResult(caption, terms, captionIndex) {
+    function activateCustomCaptionResult(caption, terms, captionIndex, shouldSeek = true) {
         const start = captionStartTime(caption);
 
         clearCaptionSearchHighlights();
+        updateSearchClearButton();
         selectTranscriptTab();
 
         const activateRow = (shouldClick) => {
             const row = findTranscriptRowByTime(start, captionIndex);
             if (!row) return false;
 
-            if (shouldClick) row.click();
+            if (shouldClick && shouldSeek) row.click();
             highlightTranscriptRow(row, terms);
             row.classList.add("custom-srt-caption-search-current");
             row.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -308,7 +333,7 @@
             return true;
         };
 
-        if (!activateRow(true)) {
+        if (!activateRow(true) && shouldSeek) {
             const video = document.querySelector("video");
             if (video) {
                 video.currentTime = start;
@@ -319,6 +344,51 @@
         setTimeout(() => activateRow(false), 75);
         setTimeout(() => activateRow(false), 250);
         setTimeout(() => activateRow(false), 600);
+    }
+
+    function jumpToCurrentCaption(event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        const video = document.querySelector("video");
+        if (!video) return;
+
+        const match = findCaptionAtTime(video.currentTime);
+        if (!match) return;
+
+        activateCustomCaptionResult(match.caption, [], match.index, false);
+    }
+
+    function createJumpToCurrentCaptionButton() {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "custom-srt-jump-current-caption MuiButtonBase-root MuiIconButton-root MuiIconButton-sizeMedium";
+        btn.setAttribute("aria-label", "Jump to current caption");
+        btn.title = "Jump to current caption";
+        btn.innerHTML = `
+            <svg viewBox="0 0 24 24" role="presentation" style="width: 24px; height: 24px;">
+                <path d="M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M3.05,13H1V11H3.05A9,9 0 0,1 11,3.05V1H13V3.05A9,9 0 0,1 20.95,11H23V13H20.95A9,9 0 0,1 13,20.95V23H11V20.95A9,9 0 0,1 3.05,13M12,5A7,7 0 0,0 5,12A7,7 0 0,0 12,19A7,7 0 0,0 19,12A7,7 0 0,0 12,5Z" style="fill: currentcolor;"></path>
+            </svg>
+        `;
+        btn.addEventListener("click", jumpToCurrentCaption);
+        return btn;
+    }
+
+    function initJumpToCurrentCaptionButton() {
+        if (!isCustomSrtActive) return;
+
+        const header = document.querySelector("#transcriptPaneHeader .event-tab-pane-header");
+        if (!header || header.querySelector(".custom-srt-jump-current-caption")) return;
+
+        const downloadTranscriptButton = header.querySelector("button[aria-label='Download transcript']");
+        const jumpButton = createJumpToCurrentCaptionButton();
+        if (downloadTranscriptButton) {
+            header.insertBefore(jumpButton, downloadTranscriptButton);
+        } else {
+            header.appendChild(jumpButton);
+        }
     }
 
     function renderCustomSearchResults(query) {
@@ -332,6 +402,7 @@
 
         resultsList.textContent = "";
         clearCaptionSearchHighlights();
+        updateSearchClearButton();
         message.textContent = matches.length
             ? `${matches.length} custom SRT caption result${matches.length === 1 ? "" : "s"}`
             : "No custom SRT caption results";
@@ -372,6 +443,15 @@
         return true;
     }
 
+    function updateSearchClearButton() {
+        const searchRegion = document.querySelector("#searchRegion");
+        const searchInput = document.querySelector("#searchInput");
+        if (!searchRegion || !searchInput) return;
+
+        searchRegion.classList.add("custom-srt-search-active");
+        searchRegion.classList.toggle("custom-srt-has-query", !!searchInput.value.trim());
+    }
+
     function shouldHandleCustomSearch() {
         if (!isCustomSrtActive || !Array.isArray(injectedCaptions)) return false;
 
@@ -405,6 +485,7 @@
         if (resultsList) resultsList.textContent = "";
         if (ariaMessage) ariaMessage.textContent = "";
         clearCaptionSearchHighlights();
+        updateSearchClearButton();
         selectTranscriptTab();
 
         event.preventDefault();
@@ -424,6 +505,9 @@
         document.documentElement.dataset.customSrtSearchInjected = "true";
         searchInput.title = "Search custom SRT captions";
         searchInput.placeholder = "Search custom SRT captions";
+        if (clearButton) clearButton.title = "Clear custom SRT search";
+        updateSearchClearButton();
+        searchInput.addEventListener("input", updateSearchClearButton, true);
         searchInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter") runCustomSearch(e);
         }, true);
@@ -541,6 +625,7 @@
     function startObservers() {
         const observer = new MutationObserver(() => {
             initCustomSearch();
+            initJumpToCurrentCaptionButton();
 
             const headerRight = document.querySelector("#header-right-react .css-h26irz");
             if (headerRight && !headerRight.dataset.srtInjected) {
@@ -563,9 +648,42 @@
         });
         observer.observe(document.body, { childList: true, subtree: true });
         initCustomSearch();
+        initJumpToCurrentCaptionButton();
     }
 
     GM_addStyle(`
+        #searchRegion.custom-srt-search-active {
+            position: relative;
+        }
+        #searchRegion.custom-srt-search-active.custom-srt-has-query #clearButton {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+        #searchRegion.custom-srt-search-active:not(.custom-srt-has-query) #clearButton {
+            display: none !important;
+        }
+        .custom-srt-jump-current-caption {
+            align-items: center;
+            background: transparent;
+            border: 0;
+            border-radius: 50%;
+            color: inherit;
+            cursor: pointer;
+            display: inline-flex;
+            height: 40px;
+            justify-content: center;
+            margin-left: 4px;
+            min-width: 40px;
+            padding: 8px;
+            vertical-align: middle;
+            width: 40px;
+        }
+        .custom-srt-jump-current-caption:hover,
+        .custom-srt-jump-current-caption:focus {
+            background: rgba(0, 0, 0, 0.08);
+            outline: none;
+        }
         #transcriptTabPane .custom-srt-caption-search-match > .index-event-row {
             background: rgba(255, 235, 59, 0.18);
         }
