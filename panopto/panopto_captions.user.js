@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.7
+// @version      0.1.8
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.7");
+    console.log("[PanoptoCC] Script booting at v0.1.8");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -164,6 +164,17 @@
         return Number(caption && (caption.Time ?? caption.StartTime ?? caption.Start)) || 0;
     }
 
+    function formatDuration(seconds) {
+        const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+        const hours = Math.floor(safeSeconds / 3600);
+        const minutes = Math.floor((safeSeconds % 3600) / 60);
+        const secs = safeSeconds % 60;
+        if (hours > 0) {
+            return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+        }
+        return `${minutes}:${String(secs).padStart(2, "0")}`;
+    }
+
     function highlightMatches(text, terms) {
         let escaped = escapeHTML(text || "");
         const uniqueTerms = Array.from(new Set(terms.filter(Boolean))).sort((a, b) => b.length - a.length);
@@ -220,6 +231,28 @@
         transcriptTabPane.style.display = "";
     }
 
+    function selectSearchResultsTab() {
+        const searchTabHeader = document.querySelector("#searchTabHeader");
+        const searchTabPane = document.querySelector("#searchTabPane");
+        if (!searchTabHeader || !searchTabPane) return;
+
+        document.querySelectorAll("#eventTabControl .event-tab-header").forEach((tab) => {
+            tab.classList.remove("selected");
+            tab.setAttribute("aria-selected", "false");
+            tab.setAttribute("tabindex", "-1");
+        });
+
+        document.querySelectorAll("#eventTabPanes .event-tab-pane").forEach((pane) => {
+            pane.style.display = "none";
+        });
+
+        searchTabHeader.style.display = "";
+        searchTabHeader.classList.add("selected");
+        searchTabHeader.setAttribute("aria-selected", "true");
+        searchTabHeader.setAttribute("tabindex", "0");
+        searchTabPane.style.display = "";
+    }
+
     function clearCaptionSearchHighlights() {
         document.querySelectorAll("#transcriptTabPane .custom-srt-caption-search-match").forEach((row) => {
             const textSpan = row.querySelector(".event-text span");
@@ -243,37 +276,77 @@
         row.classList.add("custom-srt-caption-search-match");
     }
 
-    function highlightCustomCaptionSearch(query) {
-        const ariaMessage = document.querySelector("#searchResultsAria");
-        const matches = findCustomCaptionMatches(query);
-        const terms = getCustomSearchTerms(query);
-        let firstMatchedRow = null;
-        let highlightedCount = 0;
+    function activateCustomCaptionResult(caption, terms) {
+        const start = captionStartTime(caption);
+        const row = findTranscriptRowByTime(start);
 
         clearCaptionSearchHighlights();
         selectTranscriptTab();
 
-        for (const { caption } of matches) {
-            const row = findTranscriptRowByTime(captionStartTime(caption));
-            if (!row) continue;
-
+        if (row) {
             highlightTranscriptRow(row, terms);
-            if (!firstMatchedRow) firstMatchedRow = row;
-            highlightedCount++;
+            row.classList.add("custom-srt-caption-search-current");
+            row.click();
+            row.scrollIntoView({ behavior: "smooth", block: "center" });
+            row.focus({ preventScroll: true });
+            return;
         }
 
-        if (firstMatchedRow) {
-            firstMatchedRow.classList.add("custom-srt-caption-search-current");
-            firstMatchedRow.scrollIntoView({ behavior: "smooth", block: "center" });
-            firstMatchedRow.focus({ preventScroll: true });
+        const video = document.querySelector("video");
+        if (video) {
+            video.currentTime = start;
+            video.play().catch(() => { });
+        }
+    }
+
+    function renderCustomSearchResults(query) {
+        const resultsList = document.querySelector("#searchTabPane .event-tab-list");
+        const message = document.querySelector("#searchResultsMessage");
+        const ariaMessage = document.querySelector("#searchResultsAria");
+        if (!resultsList || !message) return false;
+
+        const matches = findCustomCaptionMatches(query);
+        const terms = getCustomSearchTerms(query);
+
+        resultsList.textContent = "";
+        clearCaptionSearchHighlights();
+        message.textContent = matches.length
+            ? `${matches.length} custom SRT caption result${matches.length === 1 ? "" : "s"}`
+            : "No custom SRT caption results";
+        if (ariaMessage) ariaMessage.textContent = message.textContent;
+
+        for (const { caption, index } of matches) {
+            const start = captionStartTime(caption);
+            const row = document.createElement("li");
+            row.id = `customSrtSearch-${Math.round(start * 1000)}-${index}`;
+            row.className = "index-event custom-srt-search-result";
+            row.tabIndex = index === 0 ? 0 : -1;
+            row.innerHTML = `
+                <div class="event-error">
+                    <span class="event-error-message"></span>
+                    <a class="event-error-retry" tabindex="0">Retry</a>
+                    <a class="event-error-cancel" tabindex="0">Cancel</a>
+                </div>
+                <div class="index-event-row">
+                    <div aria-label="Custom SRT Caption"></div>
+                    <div class="event-text" dir="auto">
+                        <span>${highlightMatches(caption.Caption, terms)}</span>
+                        <div class="event-timestamp"></div>
+                    </div>
+                    <div class="event-time">${formatDuration(start)}</div>
+                </div>
+            `;
+            row.addEventListener("click", () => activateCustomCaptionResult(caption, terms));
+            row.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    activateCustomCaptionResult(caption, terms);
+                }
+            });
+            resultsList.appendChild(row);
         }
 
-        if (ariaMessage) {
-            ariaMessage.textContent = highlightedCount
-                ? `${highlightedCount} custom SRT caption result${highlightedCount === 1 ? "" : "s"} highlighted`
-                : "No custom SRT caption results";
-        }
-
+        selectSearchResultsTab();
         return true;
     }
 
@@ -295,7 +368,7 @@
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        highlightCustomCaptionSearch(query);
+        renderCustomSearchResults(query);
     }
 
     function clearCustomSearch(event) {
@@ -303,7 +376,11 @@
 
         const ariaMessage = document.querySelector("#searchResultsAria");
         const input = document.querySelector("#searchInput");
+        const message = document.querySelector("#searchResultsMessage");
+        const resultsList = document.querySelector("#searchTabPane .event-tab-list");
         if (input) input.value = "";
+        if (message) message.textContent = "Type a keyword and hit Enter to search";
+        if (resultsList) resultsList.textContent = "";
         if (ariaMessage) ariaMessage.textContent = "";
         clearCaptionSearchHighlights();
         selectTranscriptTab();
@@ -475,6 +552,11 @@
             outline-offset: -2px;
         }
         #transcriptTabPane .custom-srt-caption-search-match .search-match {
+            background: rgba(255, 235, 59, 0.55);
+            color: inherit;
+            font-weight: 600;
+        }
+        .custom-srt-search-result .search-match {
             background: rgba(255, 235, 59, 0.55);
             color: inherit;
             font-weight: 600;
