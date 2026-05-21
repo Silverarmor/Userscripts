@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.12
+// @version      0.1.13
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.12");
+    console.log("[PanoptoCC] Script booting at v0.1.13");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -443,6 +443,22 @@
         return true;
     }
 
+    function updateCustomSearchIndicator() {
+        const searchPaneHeader = document.querySelector("#searchPaneHeader");
+        const message = document.querySelector("#searchResultsMessage");
+        if (!searchPaneHeader || !message) return;
+
+        let indicator = document.querySelector("#customSrtSearchIndicator");
+        if (!indicator) {
+            indicator = document.createElement("div");
+            indicator.id = "customSrtSearchIndicator";
+            message.insertAdjacentElement("afterend", indicator);
+        }
+
+        const timeInfo = uploadTimestamp ? ` Uploaded ${uploadTimestamp}.` : "";
+        indicator.textContent = `Showing results from uploaded custom SRT.${timeInfo}`;
+    }
+
     function updateSearchClearButton() {
         const searchRegion = document.querySelector("#searchRegion");
         const searchInput = document.querySelector("#searchInput");
@@ -458,6 +474,7 @@
         const searchSortSelect = document.querySelector("#searchSortSelect");
 
         if (searchPaneHeader) searchPaneHeader.classList.add("custom-srt-controls-locked");
+        updateCustomSearchIndicator();
         if (searchTypeSelect) {
             searchTypeSelect.value = "";
             searchTypeSelect.disabled = true;
@@ -700,6 +717,13 @@
         }
         #searchPaneHeader.custom-srt-controls-locked {
             min-height: 0 !important;
+        }
+        #customSrtSearchIndicator {
+            color: #1976d2;
+            font-size: 12px;
+            font-weight: 500;
+            line-height: 1.35;
+            margin: 2px 0 8px;
         }
         #transcriptPaneHeader .event-tab-pane-header {
             align-items: center !important;
