@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.5
-// @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
+// @version      0.1.6
+// @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
 // @homepageURL  https://github.com/Silverarmor/Userscripts
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.5");
+    console.log("[PanoptoCC] Script booting at v0.1.6");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -144,6 +144,217 @@
     }
 
     /* -----------------------------
+       Custom SRT Search
+    ----------------------------- */
+    function normaliseSearchText(text) {
+        return (text || "").toString().toLowerCase().replace(/\s+/g, " ").trim();
+    }
+
+    function escapeHTML(text) {
+        const div = document.createElement("div");
+        div.textContent = text || "";
+        return div.innerHTML;
+    }
+
+    function escapeRegExp(text) {
+        return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function formatDuration(seconds) {
+        const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+        const hours = Math.floor(safeSeconds / 3600);
+        const minutes = Math.floor((safeSeconds % 3600) / 60);
+        const secs = safeSeconds % 60;
+        if (hours > 0) {
+            return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+        }
+        return `${minutes}:${String(secs).padStart(2, "0")}`;
+    }
+
+    function captionStartTime(caption) {
+        return Number(caption && (caption.Time ?? caption.StartTime ?? caption.Start)) || 0;
+    }
+
+    function highlightMatches(text, terms) {
+        let escaped = escapeHTML(text || "");
+        const uniqueTerms = Array.from(new Set(terms.filter(Boolean))).sort((a, b) => b.length - a.length);
+        if (!uniqueTerms.length) return escaped;
+
+        const pattern = uniqueTerms.map(escapeRegExp).join("|");
+        return escaped.replace(new RegExp(`(${pattern})`, "gi"), "<span class=\"search-match\">$1</span>");
+    }
+
+    function getCustomSearchTerms(query) {
+        const phrase = normaliseSearchText(query);
+        const terms = phrase.split(" ").filter(Boolean);
+        return phrase.length > 1 ? [phrase, ...terms] : terms;
+    }
+
+    function findCustomCaptionMatches(query) {
+        const terms = getCustomSearchTerms(query);
+        if (!terms.length || !Array.isArray(injectedCaptions)) return [];
+
+        return injectedCaptions
+            .map((caption, index) => ({ caption, index, searchable: normaliseSearchText(caption.Caption) }))
+            .filter((item) => terms.every((term) => item.searchable.includes(term)))
+            .sort((a, b) => captionStartTime(a.caption) - captionStartTime(b.caption));
+    }
+
+    function seekToCaptionTime(seconds) {
+        const time = Math.max(0, Number(seconds) || 0);
+        const targetMillis = Math.round(time * 1000);
+        const transcriptRow = Array.from(document.querySelectorAll("#transcriptTabPane li[id^='UserCreatedTranscript-']"))
+            .find((row) => {
+                const match = row.id.match(/^UserCreatedTranscript-(\d+)/);
+                return match && Math.abs(Number(match[1]) - targetMillis) <= 250;
+            });
+
+        if (transcriptRow) {
+            transcriptRow.click();
+            return;
+        }
+
+        const video = document.querySelector("video");
+        if (video) {
+            video.currentTime = time;
+            video.play().catch(() => { });
+        }
+    }
+
+    function selectSearchResultsTab() {
+        const searchTabHeader = document.querySelector("#searchTabHeader");
+        const searchTabPane = document.querySelector("#searchTabPane");
+        if (!searchTabHeader || !searchTabPane) return;
+
+        document.querySelectorAll("#eventTabControl .event-tab-header").forEach((tab) => {
+            tab.classList.remove("selected");
+            tab.setAttribute("aria-selected", "false");
+            tab.setAttribute("tabindex", "-1");
+        });
+
+        document.querySelectorAll("#eventTabPanes .event-tab-pane").forEach((pane) => {
+            pane.style.display = "none";
+        });
+
+        searchTabHeader.style.display = "";
+        searchTabHeader.classList.add("selected");
+        searchTabHeader.setAttribute("aria-selected", "true");
+        searchTabHeader.setAttribute("tabindex", "0");
+        searchTabPane.style.display = "";
+    }
+
+    function renderCustomSearchResults(query) {
+        const resultsList = document.querySelector("#searchTabPane .event-tab-list");
+        const message = document.querySelector("#searchResultsMessage");
+        const ariaMessage = document.querySelector("#searchResultsAria");
+        if (!resultsList || !message) return false;
+
+        const matches = findCustomCaptionMatches(query);
+        const terms = getCustomSearchTerms(query);
+
+        resultsList.textContent = "";
+        message.textContent = matches.length
+            ? `${matches.length} custom SRT caption result${matches.length === 1 ? "" : "s"}`
+            : "No custom SRT caption results";
+        if (ariaMessage) ariaMessage.textContent = message.textContent;
+
+        for (const { caption, index } of matches) {
+            const start = captionStartTime(caption);
+            const row = document.createElement("li");
+            row.id = `customSrtSearch-${Math.round(start * 1000)}-${index}`;
+            row.className = "index-event custom-srt-search-result";
+            row.tabIndex = index === 0 ? 0 : -1;
+            row.innerHTML = `
+                <div class="event-error">
+                    <span class="event-error-message"></span>
+                    <a class="event-error-retry" tabindex="0">Retry</a>
+                    <a class="event-error-cancel" tabindex="0">Cancel</a>
+                </div>
+                <div class="index-event-row">
+                    <div aria-label="Custom SRT Caption"></div>
+                    <div class="event-text" dir="auto">
+                        <span>${highlightMatches(caption.Caption, terms)}</span>
+                        <div class="event-timestamp"></div>
+                    </div>
+                    <div class="event-time">${formatDuration(start)}</div>
+                </div>
+            `;
+            row.addEventListener("click", () => seekToCaptionTime(start));
+            row.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    seekToCaptionTime(start);
+                }
+            });
+            resultsList.appendChild(row);
+        }
+
+        selectSearchResultsTab();
+        return true;
+    }
+
+    function shouldHandleCustomSearch() {
+        if (!isCustomSrtActive || !Array.isArray(injectedCaptions)) return false;
+
+        const searchType = document.querySelector("#searchTypeSelect");
+        const selectedType = searchType ? searchType.value : "";
+        return selectedType === "" || selectedType === "transcript";
+    }
+
+    function runCustomSearch(event) {
+        if (!shouldHandleCustomSearch()) return;
+
+        const input = document.querySelector("#searchInput");
+        const query = input ? input.value.trim() : "";
+        if (!query) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        renderCustomSearchResults(query);
+    }
+
+    function clearCustomSearch(event) {
+        if (!isCustomSrtActive) return;
+
+        const resultsList = document.querySelector("#searchTabPane .event-tab-list");
+        const message = document.querySelector("#searchResultsMessage");
+        const ariaMessage = document.querySelector("#searchResultsAria");
+        const input = document.querySelector("#searchInput");
+        if (input) input.value = "";
+        if (resultsList) resultsList.textContent = "";
+        if (message) message.textContent = "Type a keyword and hit Enter to search";
+        if (ariaMessage) ariaMessage.textContent = "";
+
+        const transcriptTabHeader = document.querySelector("#transcriptTabHeader");
+        if (transcriptTabHeader) transcriptTabHeader.click();
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+    }
+
+    function initCustomSearch() {
+        if (!isCustomSrtActive || document.documentElement.dataset.customSrtSearchInjected) return;
+
+        const searchInput = document.querySelector("#searchInput");
+        const searchButton = document.querySelector("#searchButton");
+        const placeholderSearchButton = document.querySelector("#placeholderSearchButton");
+        const clearButton = document.querySelector("#clearButton");
+        if (!searchInput || !searchButton) return;
+
+        document.documentElement.dataset.customSrtSearchInjected = "true";
+        searchInput.title = "Search custom SRT captions";
+        searchInput.placeholder = "Search custom SRT captions";
+        searchInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") runCustomSearch(e);
+        }, true);
+        searchButton.addEventListener("click", runCustomSearch, true);
+        if (placeholderSearchButton) placeholderSearchButton.addEventListener("click", runCustomSearch, true);
+        if (clearButton) clearButton.addEventListener("click", clearCustomSearch, true);
+    }
+
+    /* -----------------------------
        UI Components
     ----------------------------- */
     function applySharedStyles(btn) {
@@ -251,6 +462,8 @@
     ----------------------------- */
     function startObservers() {
         const observer = new MutationObserver(() => {
+            initCustomSearch();
+
             const headerRight = document.querySelector("#header-right-react .css-h26irz");
             if (headerRight && !headerRight.dataset.srtInjected) {
                 headerRight.dataset.srtInjected = "true";
@@ -271,7 +484,16 @@
             }
         });
         observer.observe(document.body, { childList: true, subtree: true });
+        initCustomSearch();
     }
+
+    GM_addStyle(`
+        .custom-srt-search-result .search-match {
+            background: rgba(255, 235, 59, 0.55);
+            color: inherit;
+            font-weight: 600;
+        }
+    `);
 
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", () => { startObservers(); initDragAndDrop(); });
