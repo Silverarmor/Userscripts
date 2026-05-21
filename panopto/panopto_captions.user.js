@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.6
+// @version      0.1.7
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.6");
+    console.log("[PanoptoCC] Script booting at v0.1.7");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -160,17 +160,6 @@
         return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
 
-    function formatDuration(seconds) {
-        const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
-        const hours = Math.floor(safeSeconds / 3600);
-        const minutes = Math.floor((safeSeconds % 3600) / 60);
-        const secs = safeSeconds % 60;
-        if (hours > 0) {
-            return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-        }
-        return `${minutes}:${String(secs).padStart(2, "0")}`;
-    }
-
     function captionStartTime(caption) {
         return Number(caption && (caption.Time ?? caption.StartTime ?? caption.Start)) || 0;
     }
@@ -200,31 +189,19 @@
             .sort((a, b) => captionStartTime(a.caption) - captionStartTime(b.caption));
     }
 
-    function seekToCaptionTime(seconds) {
-        const time = Math.max(0, Number(seconds) || 0);
-        const targetMillis = Math.round(time * 1000);
-        const transcriptRow = Array.from(document.querySelectorAll("#transcriptTabPane li[id^='UserCreatedTranscript-']"))
+    function findTranscriptRowByTime(seconds) {
+        const targetMillis = Math.round(Math.max(0, Number(seconds) || 0) * 1000);
+        return Array.from(document.querySelectorAll("#transcriptTabPane li[id^='UserCreatedTranscript-']"))
             .find((row) => {
                 const match = row.id.match(/^UserCreatedTranscript-(\d+)/);
                 return match && Math.abs(Number(match[1]) - targetMillis) <= 250;
             });
-
-        if (transcriptRow) {
-            transcriptRow.click();
-            return;
-        }
-
-        const video = document.querySelector("video");
-        if (video) {
-            video.currentTime = time;
-            video.play().catch(() => { });
-        }
     }
 
-    function selectSearchResultsTab() {
-        const searchTabHeader = document.querySelector("#searchTabHeader");
-        const searchTabPane = document.querySelector("#searchTabPane");
-        if (!searchTabHeader || !searchTabPane) return;
+    function selectTranscriptTab() {
+        const transcriptTabHeader = document.querySelector("#transcriptTabHeader");
+        const transcriptTabPane = document.querySelector("#transcriptTabPane");
+        if (!transcriptTabHeader || !transcriptTabPane) return;
 
         document.querySelectorAll("#eventTabControl .event-tab-header").forEach((tab) => {
             tab.classList.remove("selected");
@@ -236,60 +213,67 @@
             pane.style.display = "none";
         });
 
-        searchTabHeader.style.display = "";
-        searchTabHeader.classList.add("selected");
-        searchTabHeader.setAttribute("aria-selected", "true");
-        searchTabHeader.setAttribute("tabindex", "0");
-        searchTabPane.style.display = "";
+        transcriptTabHeader.style.display = "";
+        transcriptTabHeader.classList.add("selected");
+        transcriptTabHeader.setAttribute("aria-selected", "true");
+        transcriptTabHeader.setAttribute("tabindex", "0");
+        transcriptTabPane.style.display = "";
     }
 
-    function renderCustomSearchResults(query) {
-        const resultsList = document.querySelector("#searchTabPane .event-tab-list");
-        const message = document.querySelector("#searchResultsMessage");
-        const ariaMessage = document.querySelector("#searchResultsAria");
-        if (!resultsList || !message) return false;
+    function clearCaptionSearchHighlights() {
+        document.querySelectorAll("#transcriptTabPane .custom-srt-caption-search-match").forEach((row) => {
+            const textSpan = row.querySelector(".event-text span");
+            if (textSpan && textSpan.dataset.customSrtOriginalText !== undefined) {
+                textSpan.textContent = textSpan.dataset.customSrtOriginalText;
+                delete textSpan.dataset.customSrtOriginalText;
+            }
+            row.classList.remove("custom-srt-caption-search-match", "custom-srt-caption-search-current");
+        });
+    }
 
-        const matches = findCustomCaptionMatches(query);
-        const terms = getCustomSearchTerms(query);
+    function highlightTranscriptRow(row, terms) {
+        const textSpan = row.querySelector(".event-text span");
+        if (!textSpan) return;
 
-        resultsList.textContent = "";
-        message.textContent = matches.length
-            ? `${matches.length} custom SRT caption result${matches.length === 1 ? "" : "s"}`
-            : "No custom SRT caption results";
-        if (ariaMessage) ariaMessage.textContent = message.textContent;
-
-        for (const { caption, index } of matches) {
-            const start = captionStartTime(caption);
-            const row = document.createElement("li");
-            row.id = `customSrtSearch-${Math.round(start * 1000)}-${index}`;
-            row.className = "index-event custom-srt-search-result";
-            row.tabIndex = index === 0 ? 0 : -1;
-            row.innerHTML = `
-                <div class="event-error">
-                    <span class="event-error-message"></span>
-                    <a class="event-error-retry" tabindex="0">Retry</a>
-                    <a class="event-error-cancel" tabindex="0">Cancel</a>
-                </div>
-                <div class="index-event-row">
-                    <div aria-label="Custom SRT Caption"></div>
-                    <div class="event-text" dir="auto">
-                        <span>${highlightMatches(caption.Caption, terms)}</span>
-                        <div class="event-timestamp"></div>
-                    </div>
-                    <div class="event-time">${formatDuration(start)}</div>
-                </div>
-            `;
-            row.addEventListener("click", () => seekToCaptionTime(start));
-            row.addEventListener("keydown", (e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    seekToCaptionTime(start);
-                }
-            });
-            resultsList.appendChild(row);
+        if (textSpan.dataset.customSrtOriginalText === undefined) {
+            textSpan.dataset.customSrtOriginalText = textSpan.textContent || "";
         }
 
-        selectSearchResultsTab();
+        textSpan.innerHTML = highlightMatches(textSpan.dataset.customSrtOriginalText, terms);
+        row.classList.add("custom-srt-caption-search-match");
+    }
+
+    function highlightCustomCaptionSearch(query) {
+        const ariaMessage = document.querySelector("#searchResultsAria");
+        const matches = findCustomCaptionMatches(query);
+        const terms = getCustomSearchTerms(query);
+        let firstMatchedRow = null;
+        let highlightedCount = 0;
+
+        clearCaptionSearchHighlights();
+        selectTranscriptTab();
+
+        for (const { caption } of matches) {
+            const row = findTranscriptRowByTime(captionStartTime(caption));
+            if (!row) continue;
+
+            highlightTranscriptRow(row, terms);
+            if (!firstMatchedRow) firstMatchedRow = row;
+            highlightedCount++;
+        }
+
+        if (firstMatchedRow) {
+            firstMatchedRow.classList.add("custom-srt-caption-search-current");
+            firstMatchedRow.scrollIntoView({ behavior: "smooth", block: "center" });
+            firstMatchedRow.focus({ preventScroll: true });
+        }
+
+        if (ariaMessage) {
+            ariaMessage.textContent = highlightedCount
+                ? `${highlightedCount} custom SRT caption result${highlightedCount === 1 ? "" : "s"} highlighted`
+                : "No custom SRT caption results";
+        }
+
         return true;
     }
 
@@ -311,23 +295,18 @@
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        renderCustomSearchResults(query);
+        highlightCustomCaptionSearch(query);
     }
 
     function clearCustomSearch(event) {
         if (!isCustomSrtActive) return;
 
-        const resultsList = document.querySelector("#searchTabPane .event-tab-list");
-        const message = document.querySelector("#searchResultsMessage");
         const ariaMessage = document.querySelector("#searchResultsAria");
         const input = document.querySelector("#searchInput");
         if (input) input.value = "";
-        if (resultsList) resultsList.textContent = "";
-        if (message) message.textContent = "Type a keyword and hit Enter to search";
         if (ariaMessage) ariaMessage.textContent = "";
-
-        const transcriptTabHeader = document.querySelector("#transcriptTabHeader");
-        if (transcriptTabHeader) transcriptTabHeader.click();
+        clearCaptionSearchHighlights();
+        selectTranscriptTab();
 
         event.preventDefault();
         event.stopPropagation();
@@ -488,7 +467,14 @@
     }
 
     GM_addStyle(`
-        .custom-srt-search-result .search-match {
+        #transcriptTabPane .custom-srt-caption-search-match > .index-event-row {
+            background: rgba(255, 235, 59, 0.18);
+        }
+        #transcriptTabPane .custom-srt-caption-search-current > .index-event-row {
+            outline: 2px solid #1976d2;
+            outline-offset: -2px;
+        }
+        #transcriptTabPane .custom-srt-caption-search-match .search-match {
             background: rgba(255, 235, 59, 0.55);
             color: inherit;
             font-weight: 600;
