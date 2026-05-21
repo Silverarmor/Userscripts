@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.13
+// @version      0.1.14
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.13");
+    console.log("[PanoptoCC] Script booting at v0.1.14");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -318,7 +318,6 @@
         const start = captionStartTime(caption);
 
         clearCaptionSearchHighlights();
-        updateSearchClearButton();
         selectTranscriptTab();
 
         const activateRow = (shouldClick) => {
@@ -449,14 +448,18 @@
         if (!searchPaneHeader || !message) return;
 
         let indicator = document.querySelector("#customSrtSearchIndicator");
+        const timeInfo = uploadTimestamp ? ` Uploaded ${uploadTimestamp}.` : "";
+        const indicatorText = `Showing results from uploaded custom SRT.${timeInfo}`;
+
         if (!indicator) {
             indicator = document.createElement("div");
             indicator.id = "customSrtSearchIndicator";
             message.insertAdjacentElement("afterend", indicator);
         }
 
-        const timeInfo = uploadTimestamp ? ` Uploaded ${uploadTimestamp}.` : "";
-        indicator.textContent = `Showing results from uploaded custom SRT.${timeInfo}`;
+        if (indicator.textContent !== indicatorText) {
+            indicator.textContent = indicatorText;
+        }
     }
 
     function updateSearchClearButton() {
@@ -472,20 +475,29 @@
         const searchPaneHeader = document.querySelector("#searchPaneHeader");
         const searchTypeSelect = document.querySelector("#searchTypeSelect");
         const searchSortSelect = document.querySelector("#searchSortSelect");
+        if (!searchPaneHeader && !searchTypeSelect && !searchSortSelect) return;
 
-        if (searchPaneHeader) searchPaneHeader.classList.add("custom-srt-controls-locked");
-        updateCustomSearchIndicator();
-        if (searchTypeSelect) {
-            searchTypeSelect.value = "";
-            searchTypeSelect.disabled = true;
-            searchTypeSelect.tabIndex = -1;
-            searchTypeSelect.setAttribute("aria-hidden", "true");
+        if (searchPaneHeader && !searchPaneHeader.classList.contains("custom-srt-controls-locked")) {
+            searchPaneHeader.classList.add("custom-srt-controls-locked");
         }
+        updateCustomSearchIndicator();
+
+        if (searchTypeSelect) {
+            if (searchTypeSelect.value !== "") searchTypeSelect.value = "";
+            if (!searchTypeSelect.disabled) searchTypeSelect.disabled = true;
+            if (searchTypeSelect.tabIndex !== -1) searchTypeSelect.tabIndex = -1;
+            if (searchTypeSelect.getAttribute("aria-hidden") !== "true") {
+                searchTypeSelect.setAttribute("aria-hidden", "true");
+            }
+        }
+
         if (searchSortSelect) {
-            searchSortSelect.value = "time";
-            searchSortSelect.disabled = true;
-            searchSortSelect.tabIndex = -1;
-            searchSortSelect.setAttribute("aria-hidden", "true");
+            if (searchSortSelect.value !== "time") searchSortSelect.value = "time";
+            if (!searchSortSelect.disabled) searchSortSelect.disabled = true;
+            if (searchSortSelect.tabIndex !== -1) searchSortSelect.tabIndex = -1;
+            if (searchSortSelect.getAttribute("aria-hidden") !== "true") {
+                searchSortSelect.setAttribute("aria-hidden", "true");
+            }
         }
     }
 
