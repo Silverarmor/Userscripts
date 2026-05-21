@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.8
+// @version      0.1.9
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.8");
+    console.log("[PanoptoCC] Script booting at v0.1.9");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -200,19 +200,33 @@
             .sort((a, b) => captionStartTime(a.caption) - captionStartTime(b.caption));
     }
 
-    function findTranscriptRowByTime(seconds) {
+    function getTranscriptRows() {
+        return Array.from(document.querySelectorAll("#transcriptTabPane li[id^='UserCreatedTranscript-']"));
+    }
+
+    function findTranscriptRowByTime(seconds, fallbackIndex) {
         const targetMillis = Math.round(Math.max(0, Number(seconds) || 0) * 1000);
-        return Array.from(document.querySelectorAll("#transcriptTabPane li[id^='UserCreatedTranscript-']"))
-            .find((row) => {
+        const rows = getTranscriptRows();
+        const timeMatchedRow = rows
+            .map((row) => {
                 const match = row.id.match(/^UserCreatedTranscript-(\d+)/);
-                return match && Math.abs(Number(match[1]) - targetMillis) <= 250;
-            });
+                return match ? { row, delta: Math.abs(Number(match[1]) - targetMillis) } : null;
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.delta - b.delta)[0];
+
+        if (timeMatchedRow && timeMatchedRow.delta <= 1000) return timeMatchedRow.row;
+        return Number.isInteger(fallbackIndex) ? rows[fallbackIndex] : null;
     }
 
     function selectTranscriptTab() {
         const transcriptTabHeader = document.querySelector("#transcriptTabHeader");
         const transcriptTabPane = document.querySelector("#transcriptTabPane");
         if (!transcriptTabHeader || !transcriptTabPane) return;
+
+        if (!transcriptTabHeader.classList.contains("selected")) {
+            transcriptTabHeader.click();
+        }
 
         document.querySelectorAll("#eventTabControl .event-tab-header").forEach((tab) => {
             tab.classList.remove("selected");
@@ -276,27 +290,35 @@
         row.classList.add("custom-srt-caption-search-match");
     }
 
-    function activateCustomCaptionResult(caption, terms) {
+    function activateCustomCaptionResult(caption, terms, captionIndex) {
         const start = captionStartTime(caption);
-        const row = findTranscriptRowByTime(start);
 
         clearCaptionSearchHighlights();
         selectTranscriptTab();
 
-        if (row) {
+        const activateRow = (shouldClick) => {
+            const row = findTranscriptRowByTime(start, captionIndex);
+            if (!row) return false;
+
+            if (shouldClick) row.click();
             highlightTranscriptRow(row, terms);
             row.classList.add("custom-srt-caption-search-current");
-            row.click();
             row.scrollIntoView({ behavior: "smooth", block: "center" });
             row.focus({ preventScroll: true });
-            return;
+            return true;
+        };
+
+        if (!activateRow(true)) {
+            const video = document.querySelector("video");
+            if (video) {
+                video.currentTime = start;
+                video.play().catch(() => { });
+            }
         }
 
-        const video = document.querySelector("video");
-        if (video) {
-            video.currentTime = start;
-            video.play().catch(() => { });
-        }
+        setTimeout(() => activateRow(false), 75);
+        setTimeout(() => activateRow(false), 250);
+        setTimeout(() => activateRow(false), 600);
     }
 
     function renderCustomSearchResults(query) {
@@ -336,11 +358,11 @@
                     <div class="event-time">${formatDuration(start)}</div>
                 </div>
             `;
-            row.addEventListener("click", () => activateCustomCaptionResult(caption, terms));
+            row.addEventListener("click", () => activateCustomCaptionResult(caption, terms, index));
             row.addEventListener("keydown", (e) => {
                 if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    activateCustomCaptionResult(caption, terms);
+                    activateCustomCaptionResult(caption, terms, index);
                 }
             });
             resultsList.appendChild(row);
