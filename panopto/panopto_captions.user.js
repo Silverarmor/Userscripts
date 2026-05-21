@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.10
+// @version      0.1.11
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.10");
+    console.log("[PanoptoCC] Script booting at v0.1.11");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -656,13 +656,43 @@
             position: relative;
         }
         #searchRegion.custom-srt-search-active.custom-srt-has-query #clearButton {
-            display: block !important;
+            align-items: center !important;
+            display: flex !important;
+            height: 100% !important;
+            justify-content: center !important;
+            margin: 0 !important;
             visibility: visible !important;
             opacity: 1 !important;
+            position: absolute !important;
+            right: 36px !important;
+            top: 50% !important;
+            transform: translateY(-50%) !important;
         }
         #searchRegion.custom-srt-search-active:not(.custom-srt-has-query) #clearButton {
             display: none !important;
         }
+        #transcriptPaneHeader .event-tab-pane-header {
+            align-items: center !important;
+            display: flex !important;
+            flex-wrap: nowrap !important;
+            min-width: 0 !important;
+        }
+        #transcriptPaneHeader .event-tab-pane-header > div:first-child {
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+            overflow: hidden !important;
+        }
+        #transcriptPaneHeader .css-b93d1p {
+            min-width: 0 !important;
+        }
+        #transcriptPaneHeader .css-b93d1p .css-1i5jedo {
+            display: inline-block !important;
+            min-width: 0 !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+        }
+        #transcriptPaneHeader button[aria-label="Download transcript"],
         .custom-srt-jump-current-caption {
             align-items: center;
             background: transparent;
@@ -671,14 +701,17 @@
             color: inherit;
             cursor: pointer;
             display: inline-flex;
-            height: 40px;
+            flex: 0 0 36px !important;
+            height: 36px !important;
             justify-content: center;
             margin-left: 4px;
-            min-width: 40px;
-            padding: 8px;
+            min-width: 36px !important;
+            padding: 6px !important;
             vertical-align: middle;
-            width: 40px;
+            width: 36px !important;
         }
+        #transcriptPaneHeader button[aria-label="Download transcript"]:hover,
+        #transcriptPaneHeader button[aria-label="Download transcript"]:focus,
         .custom-srt-jump-current-caption:hover,
         .custom-srt-jump-current-caption:focus {
             background: rgba(0, 0, 0, 0.08);
