@@ -32,10 +32,11 @@ After installing a Safari extension, enable it in Safari's extension settings an
 3. Review the script permissions and click **Install**.
 4. Refresh any matching site that was already open.
 
-For example, this raw link should prompt Tampermonkey to install the Canvas helper: [canvas/canvas-quiz-copy-question.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas/canvas-quiz-copy-question.user.js).
+For example, this raw link should prompt Tampermonkey to install a Canvas helper: [canvas/canvas-quiz-copy-question.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas/canvas-quiz-copy-question.user.js).
 
 ## Browser Userscripts
 
+- [canvas/blurple-canvas-auto-place.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas/blurple-canvas-auto-place.user.js): Automatically clicks the Project Blurple Canvas place button when the cooldown ends and a pixel is selected, with an on-page toggle.
 - [canvas/canvas-quiz-copy-question.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas/canvas-quiz-copy-question.user.js): Adds copy buttons to University of Auckland Canvas quiz questions so the question text and answer options can be copied quickly.
 - [panopto/panopto_captions.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto/panopto_captions.user.js): Adds custom SRT caption upload/storage support to University of Auckland Panopto videos, plus refresh and direct media download controls.
 
