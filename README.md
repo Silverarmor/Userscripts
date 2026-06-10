@@ -46,6 +46,6 @@ For example, this raw link should prompt Tampermonkey to install a Canvas helper
 
 ## Helper Scripts
 
-- [explorer/organise-by-year.ps1](explorer/organise-by-year.ps1): Organises media files into date-based folders using filenames that begin with `YYYY-MM-DD`, with options for yearly, monthly, or daily grouping.
+- [explorer/organise-by-year.ps1](explorer/organise-by-year.ps1): Organises media files into date-based folders using filenames that begin with a selected date format, such as `YYYYMMDD` or `YYYY-MM-DD`, with options for yearly, monthly, or daily grouping.
 - [panopto/OrganiseTranscripts.ps1](panopto/OrganiseTranscripts.ps1): Organises downloaded Panopto transcript files into a cleaner folder structure and generates `.txt` files for ingestion as source material in other models.
 - [panopto/sort_transcripts.ps1](panopto/sort_transcripts.ps1): Archived/superseded helper for sorting downloaded Panopto transcript files.

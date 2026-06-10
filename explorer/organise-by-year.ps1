@@ -2,16 +2,18 @@
 Organizes media files into date-based folders.
 
 When run, this script asks which folder to organize and whether to group files by
-YYYY, YYYY-MM, or YYYY-MM-DD. Files must start with a YYYY-MM-DD date, such as
-2017-07-09_photo.jpg. Files that do not match that format are moved into a
-"no date" folder. Duplicate filenames are never overwritten; the script appends
-_1, _2, and so on when needed.
+YYYY, YYYY-MM, or YYYY-MM-DD. It also asks which date format to read from the
+start of each filename, such as YYYYMMDD or YYYY-MM-DD. Files that do not match
+that format are moved into a "no date" folder. Duplicate filenames are never
+overwritten; the script appends _1, _2, and so on when needed.
 #>
 
 param(
     [string]$Path,
     [ValidateSet("YYYY", "YYYY-MM", "YYYY-MM-DD")]
-    [string]$GroupBy
+    [string]$GroupBy,
+    [ValidateSet("YYYYMM", "YYYY-MMDD", "YYYYMMDD", "YYYY-MM-DD", "YYYYMM-DD")]
+    [string]$DateFormat
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,6 +61,46 @@ if ([string]::IsNullOrWhiteSpace($GroupBy)) {
     }
 }
 
+# Ask which date pattern appears at the start of the filenames.
+if ([string]::IsNullOrWhiteSpace($DateFormat)) {
+    Write-Host ""
+    Write-Host "Read dates from filenames formatted as:"
+    Write-Host "1. YYYYMM"
+    Write-Host "2. YYYY-MMDD"
+    Write-Host "3. YYYYMMDD"
+    Write-Host "4. YYYY-MM-DD"
+    Write-Host "5. YYYYMM-DD"
+    $formatChoice = Read-Host "Choose 1, 2, 3, 4, or 5"
+
+    switch ($formatChoice) {
+        "1" { $DateFormat = "YYYYMM" }
+        "2" { $DateFormat = "YYYY-MMDD" }
+        "3" { $DateFormat = "YYYYMMDD" }
+        "4" { $DateFormat = "YYYY-MM-DD" }
+        "5" { $DateFormat = "YYYYMM-DD" }
+        default {
+            Write-Host "Invalid choice: $formatChoice"
+            exit 1
+        }
+    }
+}
+
+$dateFormatPatterns = @{
+    "YYYYMM" = "^(?<year>\d{4})(?<month>\d{2})"
+    "YYYY-MMDD" = "^(?<year>\d{4})-(?<month>\d{2})(?<day>\d{2})"
+    "YYYYMMDD" = "^(?<year>\d{4})(?<month>\d{2})(?<day>\d{2})"
+    "YYYY-MM-DD" = "^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})"
+    "YYYYMM-DD" = "^(?<year>\d{4})(?<month>\d{2})-(?<day>\d{2})"
+}
+
+$datePattern = $dateFormatPatterns[$DateFormat]
+$dateFormatHasDay = $datePattern -match "\?<day>"
+
+if ($GroupBy -eq "YYYY-MM-DD" -and -not $dateFormatHasDay) {
+    Write-Host "Cannot group by YYYY-MM-DD when DateFormat is $DateFormat because filenames do not include a day."
+    exit 1
+}
+
 # Create a unique destination path without overwriting an existing file.
 function Get-UniqueDestinationPath {
     param(
@@ -95,11 +137,15 @@ $moves = @()
 foreach ($file in $files) {
     $folderName = "no date"
 
-    # Only filenames beginning with YYYY-MM-DD are treated as dated files.
-    if ($file.Name -match "^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})") {
+    # Only filenames beginning with the selected date format are treated as dated files.
+    if ($file.Name -match $datePattern) {
         $year = $matches["year"]
         $month = $matches["month"]
-        $day = $matches["day"]
+        $day = $null
+
+        if ($dateFormatHasDay) {
+            $day = $matches["day"]
+        }
 
         switch ($GroupBy) {
             "YYYY" { $folderName = $year }
@@ -129,6 +175,7 @@ if ($moves.Count -eq 0) {
 Write-Host ""
 Write-Host "Folder: $root"
 Write-Host "Grouping: $GroupBy"
+Write-Host "Date format: $DateFormat"
 Write-Host "Files to move: $($moves.Count)"
 Write-Host ""
 Write-Host "Preview:"
