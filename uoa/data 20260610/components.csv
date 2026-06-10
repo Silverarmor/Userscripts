@@ -1,0 +1,15 @@
+component_code,component_name,first_course,first_course_title,first_section,subject,subject_name,term
+CLN,Clinic,CLINIMAG 402A,Radiographic Clinical Practice III,C001-CLN (41765),CLINIMAG,Clinical Imaging,2026 Semester One
+FLD,Field Studies,BIOSCI 109,Ecology and Evolution: The Continuum of Life,F01C-FLD (39359),BIOSCI,Biological Sciences,2026 Semester One
+IND,Independent Study,ACCTG 788,Research Project,I001-IND (52438),ACCTG,Accounting,2026 Semester Two
+LAB,Laboratory,AEROSPCE 730,Aerospace Systems Design,B01C-LAB (39980),AEROSPCE,Aerospace Engineering,2026 Semester One
+LEC,Lecture,ACADENG 100,Forms in Academic English,L01C-LEC (54946),ACADENG,Academic English Studies,2026 Semester Two
+ONL,Online,CLINED 711,E-learning and Clinical Education,N001-ONL (41954),CLINED,Clinical Education,2026 Semester One
+PRA,Practicum,CLINIMAG 201,Radiographic Clinical Practice I,K01H-PRA (56266),CLINIMAG,Clinical Imaging,2026 Semester Two
+SEM,Seminar,ANCIENT 216,Sex and Power in Greece and Rome,S01C-SEM (57203),ANCIENT,Classical Studs & Ancient Hist,2026 Semester Two
+STU,Studio,ARCHDES 102,Design 1,O01C-STU (43055),ARCHDES,Architectural Design,2024 Semester One
+SUP,Supervision,AEROSPCE 791,Research Project (Aerospace Engineering),U01C-SUP (64867),AEROSPCE,Aerospace Engineering,2024 Semester Two
+TBL,Team Based Learning,ACCTG 211,Financial Accounting,E01C-TBL (53706),ACCTG,Accounting,2026 Semester Two
+THE,Thesis Research,ACCTG 791,Dissertation,H001-THE (52304),ACCTG,Accounting,2026 Semester Two
+TUT,Tutorial,ACADENG 104,Academic English for Business,T01C-TUT (55864),ACADENG,Academic English Studies,2026 Semester Two
+WRK,Workshop,ACCTG 221,Cost and Management Accounting,W01C-WRK (53711),ACCTG,Accounting,2026 Semester Two

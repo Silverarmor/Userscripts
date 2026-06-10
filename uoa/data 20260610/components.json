@@ -1,0 +1,193 @@
+{
+  "meta": {
+    "visitedSubjects": 250,
+    "visitedCourses": 6825,
+    "discoveredCourses": 6825,
+    "skippedCourses": 2113,
+    "generatedAt": "2026-06-10T12:19:37.699Z",
+    "letters": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H",
+      "I",
+      "J",
+      "K",
+      "L",
+      "M",
+      "N",
+      "O",
+      "P",
+      "Q",
+      "R",
+      "S",
+      "T",
+      "U",
+      "V",
+      "W",
+      "X",
+      "Y",
+      "Z",
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9"
+    ],
+    "status": "complete",
+    "currentLetter": "9",
+    "currentSubject": "YOUTHWRK",
+    "currentCourse": "YOUTHWRK 381"
+  },
+  "components": [
+    {
+      "code": "CLN",
+      "name": "Clinic",
+      "firstCourse": "CLINIMAG 402A",
+      "firstCourseTitle": "Radiographic Clinical Practice III",
+      "firstSection": "C001-CLN (41765)",
+      "subject": "CLINIMAG",
+      "subjectName": "Clinical Imaging",
+      "term": "2026 Semester One"
+    },
+    {
+      "code": "FLD",
+      "name": "Field Studies",
+      "firstCourse": "BIOSCI 109",
+      "firstCourseTitle": "Ecology and Evolution: The Continuum of Life",
+      "firstSection": "F01C-FLD (39359)",
+      "subject": "BIOSCI",
+      "subjectName": "Biological Sciences",
+      "term": "2026 Semester One"
+    },
+    {
+      "code": "IND",
+      "name": "Independent Study",
+      "firstCourse": "ACCTG 788",
+      "firstCourseTitle": "Research Project",
+      "firstSection": "I001-IND (52438)",
+      "subject": "ACCTG",
+      "subjectName": "Accounting",
+      "term": "2026 Semester Two"
+    },
+    {
+      "code": "LAB",
+      "name": "Laboratory",
+      "firstCourse": "AEROSPCE 730",
+      "firstCourseTitle": "Aerospace Systems Design",
+      "firstSection": "B01C-LAB (39980)",
+      "subject": "AEROSPCE",
+      "subjectName": "Aerospace Engineering",
+      "term": "2026 Semester One"
+    },
+    {
+      "code": "LEC",
+      "name": "Lecture",
+      "firstCourse": "ACADENG 100",
+      "firstCourseTitle": "Forms in Academic English",
+      "firstSection": "L01C-LEC (54946)",
+      "subject": "ACADENG",
+      "subjectName": "Academic English Studies",
+      "term": "2026 Semester Two"
+    },
+    {
+      "code": "ONL",
+      "name": "Online",
+      "firstCourse": "CLINED 711",
+      "firstCourseTitle": "E-learning and Clinical Education",
+      "firstSection": "N001-ONL (41954)",
+      "subject": "CLINED",
+      "subjectName": "Clinical Education",
+      "term": "2026 Semester One"
+    },
+    {
+      "code": "PRA",
+      "name": "Practicum",
+      "firstCourse": "CLINIMAG 201",
+      "firstCourseTitle": "Radiographic Clinical Practice I",
+      "firstSection": "K01H-PRA (56266)",
+      "subject": "CLINIMAG",
+      "subjectName": "Clinical Imaging",
+      "term": "2026 Semester Two"
+    },
+    {
+      "code": "SEM",
+      "name": "Seminar",
+      "firstCourse": "ANCIENT 216",
+      "firstCourseTitle": "Sex and Power in Greece and Rome",
+      "firstSection": "S01C-SEM (57203)",
+      "subject": "ANCIENT",
+      "subjectName": "Classical Studs & Ancient Hist",
+      "term": "2026 Semester Two"
+    },
+    {
+      "code": "STU",
+      "name": "Studio",
+      "firstCourse": "ARCHDES 102",
+      "firstCourseTitle": "Design 1",
+      "firstSection": "O01C-STU (43055)",
+      "subject": "ARCHDES",
+      "subjectName": "Architectural Design",
+      "term": "2024 Semester One"
+    },
+    {
+      "code": "SUP",
+      "name": "Supervision",
+      "firstCourse": "AEROSPCE 791",
+      "firstCourseTitle": "Research Project (Aerospace Engineering)",
+      "firstSection": "U01C-SUP (64867)",
+      "subject": "AEROSPCE",
+      "subjectName": "Aerospace Engineering",
+      "term": "2024 Semester Two"
+    },
+    {
+      "code": "TBL",
+      "name": "Team Based Learning",
+      "firstCourse": "ACCTG 211",
+      "firstCourseTitle": "Financial Accounting",
+      "firstSection": "E01C-TBL (53706)",
+      "subject": "ACCTG",
+      "subjectName": "Accounting",
+      "term": "2026 Semester Two"
+    },
+    {
+      "code": "THE",
+      "name": "Thesis Research",
+      "firstCourse": "ACCTG 791",
+      "firstCourseTitle": "Dissertation",
+      "firstSection": "H001-THE (52304)",
+      "subject": "ACCTG",
+      "subjectName": "Accounting",
+      "term": "2026 Semester Two"
+    },
+    {
+      "code": "TUT",
+      "name": "Tutorial",
+      "firstCourse": "ACADENG 104",
+      "firstCourseTitle": "Academic English for Business",
+      "firstSection": "T01C-TUT (55864)",
+      "subject": "ACADENG",
+      "subjectName": "Academic English Studies",
+      "term": "2026 Semester Two"
+    },
+    {
+      "code": "WRK",
+      "name": "Workshop",
+      "firstCourse": "ACCTG 221",
+      "firstCourseTitle": "Cost and Management Accounting",
+      "firstSection": "W01C-WRK (53711)",
+      "subject": "ACCTG",
+      "subjectName": "Accounting",
+      "term": "2026 Semester Two"
+    }
+  ]
+}
