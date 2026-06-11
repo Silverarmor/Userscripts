@@ -3,8 +3,9 @@ Organizes media files into date-based folders.
 
 When run, this script asks which folder to organize and whether to group files by
 YYYY, YYYY-MM, or YYYY-MM-DD. It also asks which date format to read from the
-start of each filename, such as YYYYMMDD or YYYY-MM-DD. Files that do not match
-that format are moved into a "no date" folder. Duplicate filenames are never
+start of each filename, such as YYYYMMDD or YYYY-MM-DD. It can organize only
+media files, all files, or selected file extensions. Files that do not match the
+date format are moved into a "no date" folder. Duplicate filenames are never
 overwritten; the script appends _1, _2, and so on when needed.
 #>
 
@@ -13,7 +14,10 @@ param(
     [ValidateSet("YYYY", "YYYY-MM", "YYYY-MM-DD")]
     [string]$GroupBy,
     [ValidateSet("YYYYMM", "YYYY-MMDD", "YYYYMMDD", "YYYY-MM-DD", "YYYYMM-DD")]
-    [string]$DateFormat
+    [string]$DateFormat,
+    [ValidateSet("Media", "All", "Select")]
+    [string]$FileMode,
+    [string[]]$Extensions
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,6 +27,51 @@ $mediaExtensions = @(
     ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".heic",
     ".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"
 )
+
+function Write-Status {
+    param(
+        [Parameter(Mandatory = $true)][string]$Message,
+        [ConsoleColor]$Color = "Cyan"
+    )
+
+    Write-Host $Message -ForegroundColor $Color
+}
+
+function Get-ExtensionKey {
+    param([AllowNull()][string]$Extension)
+
+    if ([string]::IsNullOrWhiteSpace($Extension)) {
+        return ""
+    }
+
+    return $Extension.ToLowerInvariant()
+}
+
+function Get-ExtensionLabel {
+    param([AllowNull()][string]$Extension)
+
+    if ([string]::IsNullOrWhiteSpace($Extension)) {
+        return "(no extension)"
+    }
+
+    return $Extension
+}
+
+function ConvertTo-ExtensionKey {
+    param([Parameter(Mandatory = $true)][string]$Value)
+
+    $trimmed = $Value.Trim()
+
+    if ($trimmed -eq "(no extension)" -or $trimmed -eq "none") {
+        return ""
+    }
+
+    if (-not $trimmed.StartsWith(".")) {
+        $trimmed = ".$trimmed"
+    }
+
+    return $trimmed.ToLowerInvariant()
+}
 
 # Ask for the folder to organize. Pressing Enter uses the folder containing this script.
 $defaultPath = $PSScriptRoot
@@ -97,8 +146,28 @@ $datePattern = $dateFormatPatterns[$DateFormat]
 $dateFormatHasDay = $datePattern -match "\?<day>"
 
 if ($GroupBy -eq "YYYY-MM-DD" -and -not $dateFormatHasDay) {
-    Write-Host "Cannot group by YYYY-MM-DD when DateFormat is $DateFormat because filenames do not include a day."
+    Write-Status "Cannot group by YYYY-MM-DD when DateFormat is $DateFormat because filenames do not include a day." "Red"
     exit 1
+}
+
+# Ask which files should be considered for organizing.
+if ([string]::IsNullOrWhiteSpace($FileMode)) {
+    Write-Host ""
+    Write-Host "Organize which files?"
+    Write-Host "1. Media files only"
+    Write-Host "2. All files"
+    Write-Host "3. Choose extensions found in this folder"
+    $fileChoice = Read-Host "Choose 1, 2, or 3"
+
+    switch ($fileChoice) {
+        "1" { $FileMode = "Media" }
+        "2" { $FileMode = "All" }
+        "3" { $FileMode = "Select" }
+        default {
+            Write-Status "Invalid choice: $fileChoice" "Red"
+            exit 1
+        }
+    }
 }
 
 # Create a unique destination path without overwriting an existing file.
@@ -127,14 +196,102 @@ function Get-UniqueDestinationPath {
     return $destinationPath
 }
 
-# Build the list of media files in the selected folder, ignoring files already inside output folders.
-$files = [System.IO.Directory]::EnumerateFiles($root, "*", "TopDirectoryOnly") |
-    ForEach-Object { Get-Item -LiteralPath $_ } |
-    Where-Object { $mediaExtensions -contains $_.Extension.ToLowerInvariant() }
+# Build the list of top-level files first so long-running folders show progress.
+Write-Host ""
+Write-Status "Scanning files in $root ..." "Cyan"
+$filePaths = [System.IO.Directory]::GetFiles($root, "*", "TopDirectoryOnly")
+$allFiles = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+$scanTotal = $filePaths.Count
+
+for ($index = 0; $index -lt $scanTotal; $index++) {
+    $current = $index + 1
+    $percent = [int](($current / [math]::Max($scanTotal, 1)) * 100)
+
+    Write-Progress -Activity "Scanning files" -Status "$current of $scanTotal" -PercentComplete $percent
+    $allFiles.Add([System.IO.FileInfo]::new($filePaths[$index]))
+}
+
+Write-Progress -Activity "Scanning files" -Completed
+
+if ($allFiles.Count -eq 0) {
+    Write-Host ""
+    Write-Status "No files found in: $root" "Yellow"
+    exit 0
+}
+
+$selectedExtensionKeys = New-Object System.Collections.Generic.HashSet[string]
+
+if ($FileMode -eq "Select") {
+    $extensionGroups = $allFiles |
+        Group-Object { Get-ExtensionKey $_.Extension } |
+        Sort-Object -Property @{ Expression = "Count"; Descending = $true }, @{ Expression = "Name"; Descending = $false }
+
+    Write-Host ""
+    Write-Status "Extensions found:" "Cyan"
+
+    for ($index = 0; $index -lt $extensionGroups.Count; $index++) {
+        $number = $index + 1
+        $label = Get-ExtensionLabel $extensionGroups[$index].Name
+        Write-Host ("{0,3}. {1,-16} {2,6} file(s)" -f $number, $label, $extensionGroups[$index].Count)
+    }
+
+    if ($Extensions.Count -gt 0) {
+        foreach ($extension in $Extensions) {
+            [void]$selectedExtensionKeys.Add((ConvertTo-ExtensionKey $extension))
+        }
+    }
+    else {
+        Write-Host ""
+        $selection = Read-Host "Enter numbers or extensions, separated by commas"
+        $tokens = $selection -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+
+        foreach ($token in $tokens) {
+            $selectionNumber = 0
+
+            if ([int]::TryParse($token, [ref]$selectionNumber)) {
+                if ($selectionNumber -ge 1 -and $selectionNumber -le $extensionGroups.Count) {
+                    [void]$selectedExtensionKeys.Add($extensionGroups[$selectionNumber - 1].Name)
+                }
+                else {
+                    Write-Status "Ignoring extension number out of range: $token" "Yellow"
+                }
+            }
+            else {
+                [void]$selectedExtensionKeys.Add((ConvertTo-ExtensionKey $token))
+            }
+        }
+    }
+
+    if ($selectedExtensionKeys.Count -eq 0) {
+        Write-Status "No extensions selected." "Red"
+        exit 1
+    }
+}
+
+Write-Status "Filtering files using mode: $FileMode" "Cyan"
+
+switch ($FileMode) {
+    "Media" {
+        $files = @($allFiles | Where-Object { $mediaExtensions -contains (Get-ExtensionKey $_.Extension) })
+    }
+    "All" {
+        $files = @($allFiles)
+    }
+    "Select" {
+        $files = @($allFiles | Where-Object { $selectedExtensionKeys.Contains((Get-ExtensionKey $_.Extension)) })
+    }
+}
 
 $moves = @()
 
-foreach ($file in $files) {
+Write-Status "Planning moves for $($files.Count) file(s) ..." "Cyan"
+
+for ($index = 0; $index -lt $files.Count; $index++) {
+    $file = $files[$index]
+    $current = $index + 1
+    $percent = [int](($current / [math]::Max($files.Count, 1)) * 100)
+
+    Write-Progress -Activity "Planning moves" -Status "$current of $($files.Count)" -PercentComplete $percent
     $folderName = "no date"
 
     # Only filenames beginning with the selected date format are treated as dated files.
@@ -165,9 +322,11 @@ foreach ($file in $files) {
     }
 }
 
+Write-Progress -Activity "Planning moves" -Completed
+
 if ($moves.Count -eq 0) {
     Write-Host ""
-    Write-Host "No media files found in: $root"
+    Write-Status "No matching files found in: $root" "Yellow"
     exit 0
 }
 
@@ -176,9 +335,10 @@ Write-Host ""
 Write-Host "Folder: $root"
 Write-Host "Grouping: $GroupBy"
 Write-Host "Date format: $DateFormat"
+Write-Host "File mode: $FileMode"
 Write-Host "Files to move: $($moves.Count)"
 Write-Host ""
-Write-Host "Preview:"
+Write-Status "Preview:" "Cyan"
 
 $moves | Select-Object -First 20 | ForEach-Object {
     Write-Host "  $($_.FileName) -> $($_.Folder)"
@@ -192,13 +352,21 @@ Write-Host ""
 $confirm = Read-Host "Move these files now? Type YES to continue"
 
 if ($confirm -ne "YES") {
-    Write-Host "Cancelled. No files were moved."
+    Write-Status "Cancelled. No files were moved." "Yellow"
     exit 0
 }
 
 $moved = 0
 
-foreach ($move in $moves) {
+Write-Host ""
+Write-Status "Moving files ..." "Cyan"
+
+for ($index = 0; $index -lt $moves.Count; $index++) {
+    $move = $moves[$index]
+    $current = $index + 1
+    $percent = [int](($current / [math]::Max($moves.Count, 1)) * 100)
+
+    Write-Progress -Activity "Moving files" -Status "$current of $($moves.Count): $($move.FileName)" -PercentComplete $percent
     $destinationDir = Split-Path -Path $move.Destination -Parent
 
     # Create the destination folder just before moving into it.
@@ -210,5 +378,6 @@ foreach ($move in $moves) {
     $moved++
 }
 
+Write-Progress -Activity "Moving files" -Completed
 Write-Host ""
-Write-Host "Moved $moved file(s)."
+Write-Status "Moved $moved file(s)." "Green"
