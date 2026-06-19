@@ -29,6 +29,25 @@ Get-ChildItem -Filter "*.srt" | ForEach-Object {
         
         $folderName = "$courseCode $courseNum"
         $folderPath = Join-Path -Path $_.DirectoryName -ChildPath $folderName
+        $targetSrtPath = Join-Path -Path $folderPath -ChildPath $newSrtName
+        $targetTxtPath = Join-Path -Path $folderPath -ChildPath $newTxtName
+        $tempSrtPath = Join-Path -Path $_.DirectoryName -ChildPath $newSrtName
+        $tempTxtPath = Join-Path -Path $_.DirectoryName -ChildPath $newTxtName
+
+        # Skip this file if any output already exists.
+        $pathsToCheck = @($targetSrtPath, $targetTxtPath, $tempTxtPath)
+        if ($tempSrtPath -ne $originalFile) {
+            $pathsToCheck += $tempSrtPath
+        }
+
+        $existingOutputs = $pathsToCheck | Where-Object { Test-Path -LiteralPath $_ }
+        if ($existingOutputs.Count -gt 0) {
+            Write-Warning "Skipped: $fileName (Output already exists; not overwriting)"
+            foreach ($existingOutput in $existingOutputs) {
+                Write-Warning "  Existing: $existingOutput"
+            }
+            return
+        }
 
         # 1. Generate the TXT file content
         $srtContent = Get-Content -LiteralPath $originalFile -Raw
@@ -48,11 +67,9 @@ Get-ChildItem -Filter "*.srt" | ForEach-Object {
         }
         
         # 2. Save the TXT file to the current directory temporarily
-        $tempTxtPath = Join-Path -Path $_.DirectoryName -ChildPath $newTxtName
-        $txtLines | Set-Content -Path $tempTxtPath -Encoding UTF8
+        $txtLines | Set-Content -LiteralPath $tempTxtPath -Encoding UTF8
 
         # 3. Rename the original SRT file
-        $tempSrtPath = Join-Path -Path $_.DirectoryName -ChildPath $newSrtName
         Rename-Item -LiteralPath $originalFile -NewName $newSrtName
 
         # 4. Create the target course folder if it doesn't exist
@@ -60,9 +77,9 @@ Get-ChildItem -Filter "*.srt" | ForEach-Object {
             New-Item -ItemType Directory -Path $folderPath | Out-Null
         }
 
-        # 5. Move both files into the target folder (Overwrites if a file with the same name already exists)
-        Move-Item -LiteralPath $tempSrtPath -Destination $folderPath -Force
-        Move-Item -LiteralPath $tempTxtPath -Destination $folderPath -Force
+        # 5. Move both files into the target folder
+        Move-Item -LiteralPath $tempSrtPath -Destination $folderPath
+        Move-Item -LiteralPath $tempTxtPath -Destination $folderPath
         
         Write-Host "Processed and moved: $newBaseName" -ForegroundColor Green
     } else {
