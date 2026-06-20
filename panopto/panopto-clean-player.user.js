@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Panopto - Clean player
 // @namespace    https://github.com/Silverarmor
-// @version      1.2.0
-// @description  Hides Panopto's transient buffering indicator, player branding, and transcript notice without changing video playback.
+// @version      1.3.0
+// @description  Hides Panopto's transient buffering indicator, player branding, and transcript notice, and keeps speed controls visible.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
 // @homepageURL  https://github.com/Silverarmor/Userscripts
@@ -28,6 +28,10 @@
     style.textContent = `${hiddenSelector} {
         display: none !important;
         pointer-events: none !important;
+    }
+
+    #PlayBackRatePanelYPSC {
+        display: inline !important;
     }`;
 
     function injectStyle() {
