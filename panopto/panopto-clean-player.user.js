@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Panopto - Clean player
 // @namespace    https://github.com/Silverarmor
-// @version      1.3.0
+// @version      1.3.1
 // @description  Hides Panopto's transient buffering indicator, player branding, and transcript notice, and keeps speed controls visible.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -14,6 +14,8 @@
 
 (function () {
     "use strict";
+
+    console.log("[PanoptoClean] Script booting at v1.3.1");
 
     // The buffering overlay exists once per stream; the other selectors cover
     // the in-player logo, branding footer, and transcript notice.
