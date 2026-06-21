@@ -13,17 +13,18 @@ Get-ChildItem -Filter "*.srt" | ForEach-Object {
     $originalFile = $_.FullName
     $fileName = $_.Name
 
-    # Regex to extract Course Code, Course Number, Day, and Month from your specific file format
-    # Matches: [105-032] CIVIL 735 L01C - Tue 03 Mar ...
-    if ($fileName -match '\]\s*([A-Z]+)\s+(\d{3}).*?-\s*[A-Za-z]{3}\s+(\d{2})\s+([A-Za-z]{3})') {
+    # Regex to extract Course Code, Course Number, Stream Code, Day, and Month.
+    # Matches: [401-401] CIVIL 790 T01C - Fri 01 May ...
+    if ($fileName -match '\]\s*([A-Z]+)\s+(\d{3})\s+(\S+)\s*-\s*[A-Za-z]{3}\s+(\d{2})\s+([A-Za-z]{3})') {
         $courseCode = $matches[1]
         $courseNum = $matches[2]
-        $day = $matches[3]
-        $monthStr = $matches[4]
+        $streamCode = $matches[3]
+        $day = $matches[4]
+        $monthStr = $matches[5]
         $monthNum = $months[$monthStr]
 
         # Construct new names and paths
-        $newBaseName = "$monthNum$day - $courseCode $courseNum"
+        $newBaseName = "$monthNum$day - $courseCode $courseNum $streamCode"
         $newSrtName = "$newBaseName.srt"
         $newTxtName = "$newBaseName.txt"
         
