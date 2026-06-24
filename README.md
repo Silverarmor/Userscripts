@@ -38,6 +38,7 @@ For example, this raw link should prompt Tampermonkey to install a Canvas helper
 
 - [canvas/blurple-canvas-auto-place.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas/blurple-canvas-auto-place.user.js): Automatically clicks the Project Blurple Canvas place button when the cooldown ends and a pixel is selected, with an on-page toggle.
 - [canvas/canvas-quiz-copy-question.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas/canvas-quiz-copy-question.user.js): Adds copy buttons to University of Auckland Canvas quiz questions so the question text and answer options can be copied quickly.
+- [111emergency/111emergency-readable-background.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/111emergency/111emergency-readable-background.user.js): Replaces 111 Emergency's patterned page background with a readable grey.
 - [panopto/panopto_captions.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto/panopto_captions.user.js): Adds custom SRT caption upload/storage support to University of Auckland Panopto videos, plus refresh and direct media download controls.
 - [panopto/panopto-clean-player.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto/panopto-clean-player.user.js): Hides Panopto's transient buffering indicator and player branding without changing playback.
 
