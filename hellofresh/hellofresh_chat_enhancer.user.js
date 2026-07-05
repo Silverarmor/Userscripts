@@ -16,36 +16,27 @@
 (function() {
     'use strict';
 
-    // 1. Inject aggressive CSS to force the widget to expand
+    // 1. Inject targeted CSS (Removed the broken height forcing)
     const style = document.createElement('style');
     style.innerHTML = `
         /* Force the main container to fill the screen */
         .hf-chat-fullscreen-active {
             position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            right: 0 !important;
-            bottom: 0 !important;
+            inset: 0 !important; /* Shorthand for top/left/right/bottom 0 */
             width: 100vw !important;
             height: 100vh !important;
-            max-width: 100vw !important;
-            max-height: 100vh !important;
+            max-width: none !important;
+            max-height: none !important;
             z-index: 9999999 !important;
             border-radius: 0 !important;
             margin: 0 !important;
-            transform: none !important;
             background: #ffffff !important;
         }
         
-        /* Force the inner layout wrappers to stretch */
-        .hf-chat-fullscreen-active > div,
-        .hf-chat-fullscreen-active > div > div,
-        .hf-chat-fullscreen-active > div > div > div {
-            width: 100% !important;
-            height: 100% !important;
-            max-width: 100% !important;
-            max-height: 100% !important;
-            border-radius: 0 !important;
+        /* Only remove maximum width constraints on internal divs so it stretches horizontally,
+           but leave 'height' alone so flexbox headers/footers don't get pushed off screen. */
+        .hf-chat-fullscreen-active div {
+            max-width: none !important;
         }
     `;
     document.head.appendChild(style);
@@ -54,7 +45,7 @@
     const panel = document.createElement('div');
     panel.style.position = 'fixed';
     panel.style.bottom = '20px';
-    panel.style.left = '20px'; // Positioned on the left so it doesn't block the chat widget on the right
+    panel.style.left = '20px'; 
     panel.style.zIndex = '9999999';
     panel.style.display = 'flex';
     panel.style.flexDirection = 'column';
@@ -75,7 +66,7 @@
     // Helper to apply nice styling to the buttons
     function styleButton(btn) {
         btn.style.padding = '10px 15px';
-        btn.style.background = '#067A46'; // Matches HelloFresh brand green
+        btn.style.background = '#067A46'; 
         btn.style.color = '#fff';
         btn.style.border = 'none';
         btn.style.borderRadius = '8px';
@@ -91,29 +82,26 @@
 
     // 3. Fullscreen Toggle Logic
     btnFullscreen.addEventListener('click', () => {
-        // Find a recognizable element inside the chat to anchor ourselves
         const chatBubble = document.querySelector('[data-testid="chat-message-bubble"]');
         if (!chatBubble) {
             alert('Please open the chat window and wait for it to load first!');
             return;
         }
 
-        // Ascend the DOM tree to find the absolute/fixed container housing the widget
+        // Ascend the DOM tree to find the highest absolute/fixed container housing the widget
         if (!targetContainer) {
             let container = chatBubble;
-            let found = false;
             while (container && container !== document.body) {
                 const computed = window.getComputedStyle(container);
                 if (computed.position === 'fixed' || computed.position === 'absolute' || container.getAttribute('role') === 'dialog') {
-                    targetContainer = container;
-                    found = true;
-                    break;
+                    // Keep updating targetContainer to ensure we grab the outermost wrapper
+                    targetContainer = container; 
                 }
                 container = container.parentElement;
             }
 
-            // Fallback: If we can't find a fixed container, just grab the wrapper a few levels up
-            if (!found) {
+            // Fallback just in case
+            if (!targetContainer) {
                 targetContainer = chatBubble.parentElement.parentElement.parentElement.parentElement;
             }
         }
@@ -149,7 +137,6 @@
             let timeStr = timeNode ? timeNode.innerText.trim() : '';
             let msgStr = textNode ? textNode.innerText.trim() : '';
 
-            // Strip the timestamp out of the message text if it got captured by innerText
             if (timeStr && msgStr.endsWith(timeStr)) {
                 msgStr = msgStr.substring(0, msgStr.length - timeStr.length).trim();
             }
@@ -157,7 +144,6 @@
             transcript += `[${timeStr}] ${sender}:\n${msgStr}\n\n`;
         });
 
-        // Trigger the file download
         const blob = new Blob([transcript], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
