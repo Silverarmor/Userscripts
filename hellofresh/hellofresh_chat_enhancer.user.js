@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HelloFresh Chat Enhancer (Fullscreen & Download)
 // @namespace    https://github.com/Silverarmor
-// @version      1.1
+// @version      1.2
 // @description  Adds a fullscreen mode to the HelloFresh chat window and a download button for transcripts.
 // @author       You
 // @match        *://*.hellofresh.co.nz/*
