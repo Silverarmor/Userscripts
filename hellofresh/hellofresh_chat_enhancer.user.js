@@ -7,6 +7,9 @@
 // @match        *://*.hellofresh.co.nz/*
 // @match        *://*.hellofresh.com/*
 // @match        *://*.hellofresh.com.au/*
+// @homepageURL  https://github.com/Silverarmor/Userscripts
+// @updateURL    https://raw.githubusercontent.com/Silverarmor/Userscripts/master/hellofresh/hellofresh_chat_enhancer.user.js
+// @downloadURL  https://raw.githubusercontent.com/Silverarmor/Userscripts/master/hellofresh/hellofresh_chat_enhancer.user.js
 // @grant        none
 // ==/UserScript==
 
