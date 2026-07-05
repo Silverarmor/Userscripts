@@ -41,6 +41,7 @@ For example, this raw link should prompt Tampermonkey to install a Canvas helper
 - [111emergency/111emergency-page-cleanup.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/111emergency/111emergency-page-cleanup.user.js): Cleans up 111 Emergency pages by improving background readability and hiding the footer banner.
 - [panopto/panopto_captions.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto/panopto_captions.user.js): Adds custom SRT caption upload/storage support to University of Auckland Panopto videos, plus refresh and direct media download controls.
 - [panopto/panopto-clean-player.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto/panopto-clean-player.user.js): Hides Panopto's transient buffering indicator and player branding without changing playback.
+- [hellofresh/hellofresh_chat_enhancer.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/hellofresh/hellofresh_chat_enhancer.user.js): Adds a fullscreen mode and transcript download option to Hellofresh support.
 
 ## Other Utilities
 

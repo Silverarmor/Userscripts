@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HelloFresh Chat Enhancer (Fullscreen & Download)
-// @namespace    http://tampermonkey.net/
-// @version      1.0
+// @namespace    https://github.com/Silverarmor
+// @version      1.1
 // @description  Adds a fullscreen mode to the HelloFresh chat window and a download button for transcripts.
 // @author       You
 // @match        *://*.hellofresh.co.nz/*
@@ -13,7 +13,41 @@
 (function() {
     'use strict';
 
-    // 1. Create the floating control panel
+    // 1. Inject aggressive CSS to force the widget to expand
+    const style = document.createElement('style');
+    style.innerHTML = `
+        /* Force the main container to fill the screen */
+        .hf-chat-fullscreen-active {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: 100vw !important;
+            max-height: 100vh !important;
+            z-index: 9999999 !important;
+            border-radius: 0 !important;
+            margin: 0 !important;
+            transform: none !important;
+            background: #ffffff !important;
+        }
+        
+        /* Force the inner layout wrappers to stretch */
+        .hf-chat-fullscreen-active > div,
+        .hf-chat-fullscreen-active > div > div,
+        .hf-chat-fullscreen-active > div > div > div {
+            width: 100% !important;
+            height: 100% !important;
+            max-width: 100% !important;
+            max-height: 100% !important;
+            border-radius: 0 !important;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // 2. Create the floating control panel
     const panel = document.createElement('div');
     panel.style.position = 'fixed';
     panel.style.bottom = '20px';
@@ -50,9 +84,9 @@
     }
 
     let isFullscreen = false;
-    let originalStyles = new Map();
+    let targetContainer = null;
 
-    // 2. Fullscreen Toggle Logic
+    // 3. Fullscreen Toggle Logic
     btnFullscreen.addEventListener('click', () => {
         // Find a recognizable element inside the chat to anchor ourselves
         const chatBubble = document.querySelector('[data-testid="chat-message-bubble"]');
@@ -62,75 +96,38 @@
         }
 
         // Ascend the DOM tree to find the absolute/fixed container housing the widget
-        let container = chatBubble;
-        let found = false;
-        while (container && container !== document.body) {
-            const style = window.getComputedStyle(container);
-            if (style.position === 'fixed' || style.position === 'absolute' || container.getAttribute('role') === 'dialog') {
-                found = true;
-                break;
+        if (!targetContainer) {
+            let container = chatBubble;
+            let found = false;
+            while (container && container !== document.body) {
+                const computed = window.getComputedStyle(container);
+                if (computed.position === 'fixed' || computed.position === 'absolute' || container.getAttribute('role') === 'dialog') {
+                    targetContainer = container;
+                    found = true;
+                    break;
+                }
+                container = container.parentElement;
             }
-            container = container.parentElement;
-        }
 
-        if (!found) {
-            // Fallback just in case the DOM structure slightly changes
-            container = chatBubble.parentElement.parentElement.parentElement.parentElement;
+            // Fallback: If we can't find a fixed container, just grab the wrapper a few levels up
+            if (!found) {
+                targetContainer = chatBubble.parentElement.parentElement.parentElement.parentElement;
+            }
         }
 
         if (!isFullscreen) {
-            // Save the original sizing and positioning
-            originalStyles.set(container, {
-                width: container.style.width,
-                height: container.style.height,
-                maxWidth: container.style.maxWidth,
-                maxHeight: container.style.maxHeight,
-                top: container.style.top,
-                left: container.style.left,
-                right: container.style.right,
-                bottom: container.style.bottom,
-                borderRadius: container.style.borderRadius,
-                zIndex: container.style.zIndex
-            });
-
-            // Force the container to take up the whole screen
-            container.style.position = 'fixed';
-            container.style.width = '100vw';
-            container.style.height = '100vh';
-            container.style.maxWidth = '100vw';
-            container.style.maxHeight = '100vh';
-            container.style.top = '0';
-            container.style.left = '0';
-            container.style.right = '0';
-            container.style.bottom = '0';
-            container.style.borderRadius = '0';
-            container.style.zIndex = '999999';
-
+            targetContainer.classList.add('hf-chat-fullscreen-active');
             btnFullscreen.innerText = '↙️ Exit Fullscreen';
             isFullscreen = true;
         } else {
-            // Restore the original styles
-            const orig = originalStyles.get(container);
-            if (orig) {
-                container.style.width = orig.width;
-                container.style.height = orig.height;
-                container.style.maxWidth = orig.maxWidth;
-                container.style.maxHeight = orig.maxHeight;
-                container.style.top = orig.top;
-                container.style.left = orig.left;
-                container.style.right = orig.right;
-                container.style.bottom = orig.bottom;
-                container.style.borderRadius = orig.borderRadius;
-                container.style.zIndex = orig.zIndex;
-            }
+            targetContainer.classList.remove('hf-chat-fullscreen-active');
             btnFullscreen.innerText = '⛶ Toggle Chat Fullscreen';
             isFullscreen = false;
         }
     });
 
-    // 3. Transcript Download Logic
+    // 4. Transcript Download Logic
     btnDownload.addEventListener('click', () => {
-        // Find all chat messages using the data-testid attributes
         const messageNodes = document.querySelectorAll('[data-testid^="chat-message-"]');
         if (messageNodes.length === 0) {
             alert("No chat messages found! Please open the chat window first.");
@@ -140,7 +137,6 @@
         let transcript = "--- Chat Transcript ---\n\n";
 
         messageNodes.forEach(node => {
-            // This grabs whether it's chat-message-user, chat-message-bot, or chat-message-agent
             const typeAttr = node.getAttribute('data-testid');
             const sender = typeAttr.replace('chat-message-', '').toUpperCase();
 
