@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gmail - Promotions Sponsored Cleanup
 // @namespace    https://github.com/Silverarmor/Userscripts
-// @version      1.0.0
+// @version      1.0.1
 // @description  Removes Gmail sponsored ad rows from the message list without hiding real emails that mention "Sponsored".
 // @author       Silverarmor
 // @match        https://mail.google.com/mail/u/0/*
@@ -53,10 +53,11 @@
     return hasGmailSponsoredSummary(row) && hasVisibleAdMarkers(row);
   }
 
+  // UPDATED: Hide the row instead of deleting it
   function removeSponsoredRows(root = document) {
     root.querySelectorAll(ROW_SELECTOR).forEach((row) => {
       if (isSponsoredAdRow(row)) {
-        row.remove();
+        row.style.setProperty('display', 'none', 'important');
       }
     });
   }
@@ -76,8 +77,9 @@
             continue;
           }
 
+          // UPDATED: Hide the row instead of deleting it
           if (node.matches(ROW_SELECTOR) && isSponsoredAdRow(node)) {
-            node.remove();
+            node.style.setProperty('display', 'none', 'important');
             continue;
           }
 
