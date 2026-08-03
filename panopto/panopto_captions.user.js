@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.14
+// @version      0.1.15
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,12 +19,35 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.14");
+    console.log("[PanoptoCC] Script booting at v0.1.15");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
     let uploadTimestamp = null;
     let videoUUID = null;
+    // The fetch proxy only works if this script is injected before the viewer
+    // requests captions. Track whether interception actually happened so a
+    // lost race can be detected and recovered from (see checkInjectionHealth).
+    let interceptedCaptions = false;
+    let injectionFailed = false;
+    let injectionRetryHandled = false;
+
+    const MAX_INJECTION_RETRIES = 2;
+
+    function retryCountKey() {
+        return "panoptocc-retry-" + (videoUUID || "unknown");
+    }
+
+    function getRetryCount() {
+        try { return parseInt(sessionStorage.getItem(retryCountKey()), 10) || 0; } catch (e) { return 0; }
+    }
+
+    function setRetryCount(value) {
+        try {
+            if (value > 0) sessionStorage.setItem(retryCountKey(), String(value));
+            else sessionStorage.removeItem(retryCountKey());
+        } catch (e) { }
+    }
 
     /* -----------------------------
        Helper: Refresh Page
@@ -93,6 +116,8 @@
                 else if (body instanceof URLSearchParams) bodyString = body.toString();
 
                 if (bodyString.includes("getCaptions=true") && injectedCaptions) {
+                    interceptedCaptions = true;
+                    setRetryCount(0);
                     return Promise.resolve(
                         new Response(JSON.stringify(injectedCaptions), {
                             status: 200,
@@ -599,6 +624,7 @@
             timestamp: formattedDate
         };
         GM_setValue(videoUUID || getVideoId(), JSON.stringify(dataToStore));
+        setRetryCount(0);
         refreshPage();
     }
 
@@ -670,10 +696,34 @@
     }
 
     /* -----------------------------
+       Injection Health Check
+    ----------------------------- */
+    // If the viewer rendered its transcript without our fetch proxy ever
+    // intercepting the captions request, this script was injected too late
+    // (Tampermonkey injection race) and Panopto's original captions are
+    // showing. Reload to retry; give up after MAX_INJECTION_RETRIES.
+    function checkInjectionHealth() {
+        if (!isCustomSrtActive || interceptedCaptions || injectionRetryHandled) return;
+        if (!getTranscriptRows().length) return;
+
+        injectionRetryHandled = true;
+        const attempts = getRetryCount();
+        if (attempts < MAX_INJECTION_RETRIES) {
+            setRetryCount(attempts + 1);
+            console.warn(`[PanoptoCC] Captions request was not intercepted (injected too late). Reloading to retry (${attempts + 1}/${MAX_INJECTION_RETRIES})`);
+            refreshPage();
+        } else {
+            injectionFailed = true;
+            console.error("[PanoptoCC] Could not intercept the captions request after retries - Panopto's original captions are showing.");
+        }
+    }
+
+    /* -----------------------------
        DOM Observer
     ----------------------------- */
     function startObservers() {
         const observer = new MutationObserver(() => {
+            checkInjectionHealth();
             initCustomSearch();
             if (isCustomSrtActive) lockCustomSearchControls();
             initJumpToCurrentCaptionButton();
@@ -689,15 +739,20 @@
 
             if (isCustomSrtActive) {
                 const warningSpan = document.querySelector(".css-b93d1p .css-1i5jedo");
-                if (warningSpan && !warningSpan.dataset.statusSwapped) {
-                    warningSpan.dataset.statusSwapped = "true";
+                if (warningSpan) {
                     const timeInfo = uploadTimestamp ? ` (Uploaded: ${uploadTimestamp})` : "";
-                    warningSpan.textContent = `Custom SRT is active${timeInfo}`;
-                    warningSpan.parentElement.style.color = "#1976d2";
+                    const statusText = injectionFailed
+                        ? "Custom SRT failed to apply - Panopto's captions are showing. Reload to retry."
+                        : `Custom SRT is active${timeInfo}`;
+                    if (warningSpan.textContent !== statusText) {
+                        warningSpan.textContent = statusText;
+                        warningSpan.parentElement.style.color = injectionFailed ? "#d32f2f" : "#1976d2";
+                    }
                 }
             }
         });
         observer.observe(document.body, { childList: true, subtree: true });
+        checkInjectionHealth();
         initCustomSearch();
         if (isCustomSrtActive) lockCustomSearchControls();
         initJumpToCurrentCaptionButton();
