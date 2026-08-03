@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.15
+// @version      0.1.16
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.15");
+    console.log("[PanoptoCC] Script booting at v0.1.16");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -47,6 +47,46 @@
             if (value > 0) sessionStorage.setItem(retryCountKey(), String(value));
             else sessionStorage.removeItem(retryCountKey());
         } catch (e) { }
+    }
+
+    /* -----------------------------
+       GM Storage handoff
+       In Tampermonkey's "UserScripts API Dynamic" mode, GM values are
+       injected as a snapshot that can lag one reload behind a fresh
+       GM_setValue/GM_deleteValue. Mirror the latest save/revert in
+       sessionStorage (synchronous, same-tab) so the reload right after an
+       upload or revert sees the new state; drop the mirror once GM storage
+       has caught up.
+    ----------------------------- */
+    const DELETED_SENTINEL = "__PANOPTOCC_DELETED__";
+
+    function pendingValueKey(uuid) {
+        return "panoptocc-pending-" + uuid;
+    }
+
+    function writeCaptionStore(uuid, serialized) {
+        if (serialized === null) {
+            GM_deleteValue(uuid);
+            try { sessionStorage.setItem(pendingValueKey(uuid), DELETED_SENTINEL); } catch (e) { }
+        } else {
+            GM_setValue(uuid, serialized);
+            try { sessionStorage.setItem(pendingValueKey(uuid), serialized); } catch (e) { }
+        }
+    }
+
+    function readCaptionStore(uuid) {
+        let stored = null;
+        try { stored = GM_getValue(uuid, null); } catch (e) { }
+
+        let pending = null;
+        try { pending = sessionStorage.getItem(pendingValueKey(uuid)); } catch (e) { }
+        if (pending === null) return stored;
+
+        const pendingValue = pending === DELETED_SENTINEL ? null : pending;
+        if (stored === pendingValue) {
+            try { sessionStorage.removeItem(pendingValueKey(uuid)); } catch (e) { }
+        }
+        return pendingValue;
     }
 
     /* -----------------------------
@@ -81,7 +121,7 @@
 
     if (videoUUID) {
         try {
-            const storedData = GM_getValue(videoUUID, null);
+            const storedData = readCaptionStore(videoUUID);
             if (storedData) {
                 const parsed = JSON.parse(storedData);
                 if (parsed.captions) {
@@ -623,7 +663,7 @@
             captions: captions,
             timestamp: formattedDate
         };
-        GM_setValue(videoUUID || getVideoId(), JSON.stringify(dataToStore));
+        writeCaptionStore(videoUUID || getVideoId(), JSON.stringify(dataToStore));
         setRetryCount(0);
         refreshPage();
     }
@@ -654,7 +694,8 @@
         btn.style.backgroundColor = "#d32f2f";
         btn.onclick = (e) => {
             e.stopPropagation();
-            GM_deleteValue(videoUUID || getVideoId());
+            writeCaptionStore(videoUUID || getVideoId(), null);
+            setRetryCount(0);
             refreshPage();
         };
         return btn;
