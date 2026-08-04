@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.16
+// @version      0.1.17
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.16");
+    console.log("[PanoptoCC] Script booting at v0.1.17");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -650,6 +650,7 @@
         btn.style.alignItems = "center";
         btn.style.textDecoration = "none";
         btn.style.boxSizing = "border-box";
+        btn.style.whiteSpace = "nowrap";
     }
 
     function saveAndRefresh(captions) {
@@ -671,7 +672,8 @@
     function createUploadButton() {
         const btn = document.createElement("button");
         applySharedStyles(btn);
-        btn.textContent = isCustomSrtActive ? "Replace SRT" : "Upload SRT";
+        btn.textContent = isCustomSrtActive ? "Replace" : "Upload";
+        btn.title = isCustomSrtActive ? "Replace SRT" : "Upload SRT";
         btn.style.backgroundColor = "#1976d2";
         btn.onclick = (e) => {
             e.stopPropagation();
@@ -690,7 +692,8 @@
     function createClearButton() {
         const btn = document.createElement("button");
         applySharedStyles(btn);
-        btn.textContent = "Revert to Default";
+        btn.textContent = "Revert";
+        btn.title = "Revert to Default";
         btn.style.backgroundColor = "#d32f2f";
         btn.onclick = (e) => {
             e.stopPropagation();
@@ -707,6 +710,7 @@
         const btn = document.createElement("a");
         applySharedStyles(btn);
         btn.textContent = "Download";
+        btn.title = "Download audio podcast MP4";
         btn.href = `https://auckland.au.panopto.com/Panopto/Podcast/Download/${uuid}.mp4?mediaTargetType=audioPodcast`;
         btn.download = `AudioPodcast-${uuid}.mp4`;
         btn.target = "_blank";
@@ -800,6 +804,9 @@
     }
 
     GM_addStyle(`
+        #logoContainer.small-logo {
+            display: none !important;
+        }
         #searchRegion.custom-srt-search-active {
             position: relative;
         }
