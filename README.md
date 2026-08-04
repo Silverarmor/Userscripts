@@ -43,6 +43,7 @@ For example, this raw link should prompt Tampermonkey to install a Canvas helper
 - [panopto/panopto-clean-player.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/panopto/panopto-clean-player.user.js): Hides Panopto's transient buffering indicator and player branding without changing playback.
 - [hellofresh/hellofresh_chat_enhancer.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/hellofresh/hellofresh_chat_enhancer.user.js): Adds a fullscreen mode and transcript download option to Hellofresh support.
 - [gmail/gmail-promotions-sponsored-cleanup.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/gmail/gmail-promotions-sponsored-cleanup.user.js): Removes Gmail sponsored ad rows from message lists while leaving real emails that mention "Sponsored" alone.
+- [netflix/netflix-watch-time-tracker.user.js](https://raw.githubusercontent.com/Silverarmor/Userscripts/master/netflix/netflix-watch-time-tracker.user.js): Tracks real (wall-clock) time spent watching Netflix with a daily and per-title stats panel. Unaffected by playback speed changes.
 
 ## Other Utilities
 
