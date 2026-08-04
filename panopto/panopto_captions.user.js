@@ -807,6 +807,16 @@
         #logoContainer.small-logo {
             display: none !important;
         }
+        #viewerHeader .header-left {
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+            overflow: hidden !important;
+        }
+        #deliveryTitle {
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+        }
         #searchRegion.custom-srt-search-active {
             position: relative;
         }
