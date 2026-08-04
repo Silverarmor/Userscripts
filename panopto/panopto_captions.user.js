@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.17
+// @version      0.1.18
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,7 +19,7 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.17");
+    console.log("[PanoptoCC] Script booting at v0.1.18");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
@@ -672,8 +672,10 @@
     function createUploadButton() {
         const btn = document.createElement("button");
         applySharedStyles(btn);
-        btn.textContent = isCustomSrtActive ? "Replace" : "Upload";
-        btn.title = isCustomSrtActive ? "Replace SRT" : "Upload SRT";
+        btn.dataset.panoptoccFullLabel = isCustomSrtActive ? "Replace SRT" : "Upload SRT";
+        btn.dataset.panoptoccShortLabel = isCustomSrtActive ? "Replace" : "Upload";
+        btn.textContent = headerCompact ? btn.dataset.panoptoccShortLabel : btn.dataset.panoptoccFullLabel;
+        btn.title = btn.dataset.panoptoccFullLabel;
         btn.style.backgroundColor = "#1976d2";
         btn.onclick = (e) => {
             e.stopPropagation();
@@ -692,8 +694,10 @@
     function createClearButton() {
         const btn = document.createElement("button");
         applySharedStyles(btn);
-        btn.textContent = "Revert";
-        btn.title = "Revert to Default";
+        btn.dataset.panoptoccFullLabel = "Revert to Default";
+        btn.dataset.panoptoccShortLabel = "Revert";
+        btn.textContent = headerCompact ? btn.dataset.panoptoccShortLabel : btn.dataset.panoptoccFullLabel;
+        btn.title = btn.dataset.panoptoccFullLabel;
         btn.style.backgroundColor = "#d32f2f";
         btn.onclick = (e) => {
             e.stopPropagation();
@@ -716,6 +720,61 @@
         btn.target = "_blank";
         btn.style.backgroundColor = "#2e7d32";
         return btn;
+    }
+
+    /* -----------------------------
+       Adaptive header sizing
+       Full button labels by default; switch to one-word labels and hide
+       the Panopto logo only while the title is squeezed (its ellipsis is
+       active). Expanding back requires enough slack to refit the full
+       labels and logo, so the two states cannot oscillate.
+    ----------------------------- */
+    const COMPACT_CLASS = "panoptocc-compact-header";
+    const EXPAND_TRIAL_INTERVAL_MS = 1000;
+    let headerCompact = false;
+    let lastExpandTrial = 0;
+
+    function headerLabelButtons() {
+        return Array.from(document.querySelectorAll("[data-panoptocc-full-label]"));
+    }
+
+    function applyHeaderLabels() {
+        headerLabelButtons().forEach((btn) => {
+            const label = headerCompact ? btn.dataset.panoptoccShortLabel : btn.dataset.panoptoccFullLabel;
+            if (btn.textContent !== label) btn.textContent = label;
+        });
+        document.documentElement.classList.toggle(COMPACT_CLASS, headerCompact);
+    }
+
+    function updateHeaderCompactness() {
+        const title = document.querySelector("#deliveryTitle");
+        if (!title || !headerLabelButtons().length) return;
+
+        if (!headerCompact) {
+            if (title.scrollWidth > title.clientWidth + 1) {
+                headerCompact = true;
+                applyHeaderLabels();
+            }
+            return;
+        }
+
+        // Trial expansion: restore full labels and logo, then keep them only
+        // if the title does not truncate. The title is shrink-to-fit
+        // (clientWidth === scrollWidth whenever it fits), so truncation is the
+        // only usable signal. Reading scrollWidth forces a synchronous reflow
+        // and no paint happens mid-task, so a failed trial is invisible.
+        // Throttled because the label swap itself triggers the
+        // MutationObserver that calls this.
+        const now = Date.now();
+        if (now - lastExpandTrial < EXPAND_TRIAL_INTERVAL_MS) return;
+        lastExpandTrial = now;
+
+        headerCompact = false;
+        applyHeaderLabels();
+        if (title.scrollWidth > title.clientWidth + 1) {
+            headerCompact = true;
+            applyHeaderLabels();
+        }
     }
 
     /* -----------------------------
@@ -769,6 +828,7 @@
     function startObservers() {
         const observer = new MutationObserver(() => {
             checkInjectionHealth();
+            updateHeaderCompactness();
             initCustomSearch();
             if (isCustomSrtActive) lockCustomSearchControls();
             initJumpToCurrentCaptionButton();
@@ -797,6 +857,11 @@
             }
         });
         observer.observe(document.body, { childList: true, subtree: true });
+        let resizeTimer = 0;
+        window.addEventListener("resize", () => {
+            window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(updateHeaderCompactness, 150);
+        });
         checkInjectionHealth();
         initCustomSearch();
         if (isCustomSrtActive) lockCustomSearchControls();
@@ -804,7 +869,7 @@
     }
 
     GM_addStyle(`
-        #logoContainer.small-logo {
+        .panoptocc-compact-header #logoContainer.small-logo {
             display: none !important;
         }
         #viewerHeader .header-left {
