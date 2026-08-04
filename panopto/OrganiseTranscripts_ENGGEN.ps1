@@ -15,7 +15,8 @@ Get-ChildItem -Filter "*.srt" | ForEach-Object {
 
     # Regex to extract Course Code, Course Number, Day, Month, and Title.
     # Matches: ENGGEN 403 [21 July] Lecture 1 What can ENGGEN 403 do for me__default_f0e7324c.srt
-    if ($fileName -match '^([A-Z]+)\s+(\d{3})\s+\[(\d{1,2})\s+([A-Za-z]+)\]\s*(.+?)_?_default_[0-9a-fA-F]+\.srt$') {
+    # The trailing hash is optional: ... Business Case Analysis_default.srt
+    if ($fileName -match '^([A-Z]+)\s+(\d{3})\s+\[(\d{1,2})\s+([A-Za-z]+)\]\s*(.+?)_?_default(_[0-9a-fA-F]+)?\.srt$') {
         $courseCode = $matches[1]
         $courseNum = $matches[2]
         $day = $matches[3].PadLeft(2, '0')
