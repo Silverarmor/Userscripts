@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Netflix - Watch Time Tracker
 // @namespace    https://github.com/Silverarmor/Userscripts
-// @version      1.0.0
+// @version      1.1.0
 // @description  Tracks real (wall-clock) time spent watching Netflix with a daily and per-title stats panel. Unaffected by playback speed changes.
 // @author       Silverarmor
 // @match        https://www.netflix.com/*
@@ -27,6 +27,7 @@
   const MAX_TICK_CREDIT_S = 5;
   const UNKNOWN_TITLE = "Unknown title";
   const TITLE_SELECTOR = '[data-uia="video-title"]';
+  const CONTROLS_SELECTOR = '[data-uia="controls-standard"]';
   const HISTORY_DAYS = 7;
 
   let data = loadData();
@@ -305,6 +306,31 @@
     document.body.appendChild(panelEl);
   }
 
+  function playerControlsVisible() {
+    const controls = document.querySelector(CONTROLS_SELECTOR);
+    if (!controls) {
+      return false;
+    }
+    if (typeof controls.checkVisibility === "function") {
+      return controls.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+    }
+    const style = getComputedStyle(controls);
+    return style.opacity !== "0" && style.visibility !== "hidden" && style.display !== "none";
+  }
+
+  function pillShouldShow() {
+    if (!isWatchPage()) {
+      return true;
+    }
+    // While watching, only show the pill together with Netflix's own player
+    // controls (they always show while paused, and hide when the mouse idles).
+    const video = document.querySelector("video");
+    if (video && video.paused) {
+      return true;
+    }
+    return playerControlsVisible();
+  }
+
   function updateUi() {
     if (!pillEl) {
       return;
@@ -313,6 +339,16 @@
     if (!pillEl.isConnected) {
       document.body.appendChild(pillEl);
       document.body.appendChild(panelEl);
+    }
+    const visible = pillShouldShow();
+    pillEl.style.display = visible ? "" : "none";
+    if (!visible) {
+      if (panelOpen) {
+        panelOpen = false;
+        pillEl.classList.remove("nwt-open");
+      }
+      panelEl.style.display = "none";
+      return;
     }
     const today = dayBucket(dateKey(new Date())).seconds;
     pillEl.textContent = `⏱ ${formatDuration(today)} today`;
@@ -377,11 +413,6 @@
     exportButton.addEventListener("click", exportData);
     buttons.appendChild(exportButton);
 
-    const resetButton = document.createElement("button");
-    resetButton.textContent = "Reset";
-    resetButton.addEventListener("click", resetData);
-    buttons.appendChild(resetButton);
-
     panelEl.appendChild(buttons);
   }
 
@@ -406,17 +437,6 @@
     link.download = `netflix-watch-time-${dateKey(new Date())}.json`;
     link.click();
     URL.revokeObjectURL(url);
-  }
-
-  function resetData() {
-    if (!window.confirm("Reset all Netflix watch time data? This cannot be undone.")) {
-      return;
-    }
-    data = { days: {} };
-    sessionSeconds = 0;
-    pendingSeconds = 0;
-    saveData();
-    renderPanel();
   }
 
   // -------------------------------------------------------------- start ----
