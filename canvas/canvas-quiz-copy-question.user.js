@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Canvas Quiz - Copy Question
 // @namespace    https://github.com/Silverarmor/Userscripts
-// @version      0.3.6
-// @description  Adds a button beside each Canvas quiz question number to copy the question text and answer options.
+// @version      0.4.0
+// @description  Adds a button beside each Canvas quiz question number to copy the question text and answer options, plus a top-right button to copy all questions at once.
 // @author       Silverarmor
 // @match        https://canvas.auckland.ac.nz/courses/*/quizzes/*/take*
 // @homepageURL  https://github.com/Silverarmor/Userscripts
@@ -20,6 +20,8 @@
   const COPIED_CLASS = "tm-copy-question--copied";
   const HIDDEN_CLASS = "tm-copy-question--hidden";
   const TOGGLE_BUTTON_CLASS = "tm-copy-question-toggle";
+  const COPY_ALL_BUTTON_CLASS = "tm-copy-question-copy-all";
+  const TOOLBAR_CLASS = "tm-copy-question-toolbar";
   const MAX_SETUP_ATTEMPTS = 30;
   let copyButtonsVisible = true;
   let setupAttempts = 0;
@@ -178,6 +180,13 @@
     return parts.filter((part, index) => part || index === 1).join("\n");
   }
 
+  function formatAllQuestionsForPrompt() {
+    return getQuestionElements()
+      .map((questionEl) => formatQuestionForPrompt(questionEl))
+      .filter(Boolean)
+      .join("\n\n---\n\n");
+  }
+
   async function copyText(text) {
     if (typeof GM_setClipboard === "function") {
       GM_setClipboard(text, "text");
@@ -247,11 +256,17 @@
         display: none !important;
       }
 
-      .${TOGGLE_BUTTON_CLASS} {
+      .${TOOLBAR_CLASS} {
         position: fixed;
         top: 10px;
         right: 14px;
         z-index: 10000;
+        display: flex;
+        gap: 8px;
+      }
+
+      .${TOGGLE_BUTTON_CLASS},
+      .${COPY_ALL_BUTTON_CLASS} {
         padding: 6px 10px;
         border: 1px solid #8f98a3;
         border-radius: 4px;
@@ -264,9 +279,15 @@
         line-height: 1.4;
       }
 
-      .${TOGGLE_BUTTON_CLASS}:hover {
+      .${TOGGLE_BUTTON_CLASS}:hover,
+      .${COPY_ALL_BUTTON_CLASS}:hover {
         background: #f5f7f9;
         border-color: #6b7785;
+      }
+
+      .${COPY_ALL_BUTTON_CLASS}.${COPIED_CLASS} {
+        border-color: #0b874b;
+        color: #0b874b;
       }
 
       .display_question .answers select.question_input {
@@ -299,21 +320,47 @@
     }
   }
 
-  function addToggleButton() {
-    if (document.querySelector(`.${TOGGLE_BUTTON_CLASS}`)) {
+  function addToolbarButtons() {
+    if (document.querySelector(`.${TOOLBAR_CLASS}`)) {
       return;
     }
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = TOGGLE_BUTTON_CLASS;
-    button.title = "Toggle all question copy buttons";
-    button.addEventListener("click", () => {
+    const toolbar = document.createElement("div");
+    toolbar.className = TOOLBAR_CLASS;
+
+    const copyAllButton = document.createElement("button");
+    copyAllButton.type = "button";
+    copyAllButton.className = COPY_ALL_BUTTON_CLASS;
+    copyAllButton.textContent = "Copy all questions";
+    copyAllButton.title = "Copy every question and its answer options";
+    copyAllButton.addEventListener("click", async () => {
+      const text = formatAllQuestionsForPrompt();
+
+      if (!text) {
+        flashButton(copyAllButton, "Nothing found", COPIED_CLASS);
+        return;
+      }
+
+      try {
+        await copyText(text);
+        flashButton(copyAllButton, "Copied", COPIED_CLASS);
+      } catch (error) {
+        console.error("Could not copy questions", error);
+        flashButton(copyAllButton, "Copy failed", COPIED_CLASS);
+      }
+    });
+
+    const toggleButton = document.createElement("button");
+    toggleButton.type = "button";
+    toggleButton.className = TOGGLE_BUTTON_CLASS;
+    toggleButton.title = "Toggle all question copy buttons";
+    toggleButton.addEventListener("click", () => {
       copyButtonsVisible = !copyButtonsVisible;
       updateCopyButtonVisibility();
     });
 
-    document.body.appendChild(button);
+    toolbar.append(copyAllButton, toggleButton);
+    document.body.appendChild(toolbar);
     updateCopyButtonVisibility();
   }
 
@@ -368,7 +415,7 @@
 
     const questionCount = addCopyButtons();
     if (questionCount > 0) {
-      addToggleButton();
+      addToolbarButtons();
       return;
     }
 
