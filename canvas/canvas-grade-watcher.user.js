@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Canvas - Grade Watcher (ENGGEN 403 Team Project)
 // @namespace    https://github.com/Silverarmor/Userscripts
-// @version      1.1.0
+// @version      1.2.0
 // @description  Polls Canvas and notifies when the Team Project is graded (planner API), when the score is posted (xx/25 on the grades page), or when the course Total changes.
 // @author       Silverarmor
 // @match        https://canvas.auckland.ac.nz/courses/142383/grades*
@@ -44,6 +44,10 @@
   Any change to graded / posted score / Total fires a desktop notification, a sound,
   and a flashing tab title. The last-seen state is stored with GM_setValue so a page
   reload does not re-notify you for something you already know about.
+
+  Once the score is released (a number is visible on the grades page) automatic
+  polling stops — there is nothing left to watch for. The badge shows the final
+  score; clicking it still polls on demand.
 
   Click the small badge in the bottom-right corner to poll immediately, or to grant
   browser notification permission the first time. Right-click it to fire a test
@@ -204,6 +208,8 @@
   }
 
   // ---------- Diff + main poll ----------
+  let pollTimer = null;
+
   function describe(s) {
     const sc = s.score != null ? `${s.score}/${POINTS_POSSIBLE}` : (s.muted ? 'hidden' : 'none');
     return `graded=${s.graded} needsGrading=${s.needsGrading} score=${sc} total=${s.total} muted=${s.muted}`;
@@ -261,11 +267,21 @@
       log('First run, baseline stored:', describe(now));
     }
     saveState(now);
+
+    // Score released: nothing left to watch for, so stop the auto-poll.
+    // Manual badge clicks still poll on demand.
+    const released = now.score != null;
+    if (released && pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      log('Score released — automatic polling stopped.');
+    }
+
     setBadge(
       `${ASSIGNMENT_NAME}: ${now.graded ? 'GRADED' : 'not graded'} · ` +
-      `${now.score != null ? now.score + '/' + POINTS_POSSIBLE : 'hidden'} · Total ${now.total ?? '?'} · ` +
-      `${new Date().toLocaleTimeString()}`,
-      now.score != null ? '#2a2' : now.graded ? '#e80' : '#38c'
+      `${released ? now.score + '/' + POINTS_POSSIBLE : 'hidden'} · Total ${now.total ?? '?'} · ` +
+      `${released ? 'released, polling stopped' : new Date().toLocaleTimeString()}`,
+      released ? '#2a2' : now.graded ? '#e80' : '#38c'
     );
   }
 
@@ -300,5 +316,5 @@
     log('Click the badge once to allow browser notifications (GM_notification works without it).');
   }
   poll();
-  setInterval(poll, POLL_SECONDS * 1000);
+  pollTimer = setInterval(poll, POLL_SECONDS * 1000);
 })();
