@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Canvas - Grade Watcher
 // @namespace    https://github.com/Silverarmor/Userscripts
-// @version      2.2.0
+// @version      2.3.0
 // @description  Watch any assignment on a Canvas grades page: notifies when it is graded (planner API), when the score is posted, or when the course Total changes.
 // @author       Silverarmor
 // @match        https://canvas.auckland.ac.nz/courses/*/grades*
@@ -22,7 +22,9 @@
   and click the badge in the bottom-right corner to pick which assignment to watch
   (the list comes from the #submission_<id> rows on the page; name, points possible
   and due date are then fetched from the assignments API and stored per course).
-  Shift-click the badge, or use Tampermonkey's menu, to change assignment later.
+  Shift-click the badge, or use Tampermonkey's menu, to change assignment later;
+  the picker's "Stop watching" button (also in the menu) clears the selection and
+  stops polling entirely.
 
   Leave the tab open. Every POLL_SECONDS the script, without reloading the page:
 
@@ -247,6 +249,14 @@
     ticker = startTicker();
   }
 
+  function stopWatching() {
+    if (ticker) { ticker.stop(); ticker = null; }
+    saveWatched(null);
+    ASSIGNMENT_ID = ASSIGNMENT_NAME = POINTS_POSSIBLE = DUE_DATE = STORAGE_KEY = null;
+    log('Stopped watching — no assignment selected.');
+    setBadge('Grade Watcher: click to choose an assignment', '#666');
+  }
+
   // The grades page renders one tr#submission_<numeric id> per real assignment
   // (group/total rows have non-numeric suffixes and are skipped).
   function listAssignmentsOnPage() {
@@ -288,7 +298,17 @@
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = '✕';
     cancelBtn.title = 'Cancel';
-    picker.append(select, watchBtn, cancelBtn);
+    picker.append(select, watchBtn);
+    if (ASSIGNMENT_ID) {
+      const stopBtn = document.createElement('button');
+      stopBtn.textContent = 'Stop watching';
+      stopBtn.addEventListener('click', () => {
+        picker.remove(); picker = null;
+        stopWatching();
+      });
+      picker.append(stopBtn);
+    }
+    picker.append(cancelBtn);
     document.body.appendChild(picker);
 
     cancelBtn.addEventListener('click', () => { picker.remove(); picker = null; });
@@ -462,6 +482,7 @@
   }
   if (typeof GM_registerMenuCommand === 'function') {
     GM_registerMenuCommand('Choose assignment to watch', openPicker);
+    GM_registerMenuCommand('Stop watching', stopWatching);
   }
 
   const watched = loadWatched();
