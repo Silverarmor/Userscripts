@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Canvas - Grade Watcher (ENGGEN 403 Team Project)
 // @namespace    https://github.com/Silverarmor/Userscripts
-// @version      1.0.0
+// @version      1.1.0
 // @description  Polls Canvas and notifies when the Team Project is graded (planner API), when the score is posted (xx/25 on the grades page), or when the course Total changes.
 // @author       Silverarmor
 // @match        https://canvas.auckland.ac.nz/courses/142383/grades*
@@ -46,7 +46,8 @@
   reload does not re-notify you for something you already know about.
 
   Click the small badge in the bottom-right corner to poll immediately, or to grant
-  browser notification permission the first time.
+  browser notification permission the first time. Right-click it to fire a test
+  notification (desktop notification + beep + flashing tab title).
 */
 
 (function () {
@@ -278,10 +279,14 @@
         padding: '6px 10px', borderRadius: '6px', fontSize: '12px', color: '#fff',
         fontFamily: 'system-ui, sans-serif', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.3)',
       });
-      badge.title = `Click to check now (auto every ${POLL_SECONDS} s)`;
+      badge.title = `Click to check now (auto every ${POLL_SECONDS} s) · Right-click to test notifications`;
       badge.addEventListener('click', () => {
         if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
         poll(true);
+      });
+      badge.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        notify(`${ASSIGNMENT_NAME}: test notification`, 'If you can see this, notifications are working.');
       });
       document.body.appendChild(badge);
     }
