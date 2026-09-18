@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Canvas - Grade Watcher
 // @namespace    https://github.com/Silverarmor/Userscripts
-// @version      2.1.0
+// @version      2.2.0
 // @description  Watch any assignment on a Canvas grades page: notifies when it is graded (planner API), when the score is posted, or when the course Total changes.
 // @author       Silverarmor
 // @match        https://canvas.auckland.ac.nz/courses/*/grades*
@@ -43,10 +43,15 @@
        grades.current_score, which is the course Total shown on the page.
        (The Total in the raw page HTML is only a placeholder; Canvas fills it in with JS.)
 
-  Note: browsers throttle timers in background tabs (Chrome drops to roughly once a
-  minute after ~5 min hidden). Keep the tab in its own window, or pin it and glance
-  at it, if you need the full 15 s cadence. The change will still be caught, just
-  up to a minute later.
+  Note: Chrome throttles main-thread timers in background tabs to ~once a minute
+  after ~5 min hidden, so the interval runs in a small Web Worker instead — worker
+  timers are exempt, keeping the full 15 s cadence with the tab unfocused. If the
+  site's CSP ever blocks blob: workers it falls back to a plain setInterval
+  (throttled to ~1/min in the background, changes caught up to a minute late).
+  Tab *discarding* (Chrome Memory Saver) still stops the script entirely — add
+  the Canvas site under chrome://settings/performance "Always keep these sites
+  active" on result day.
+  Avoid Safari: it throttles background tabs at the process level (workers too).
 
   Any change to graded / posted score / Total fires a desktop notification, a sound,
   and a flashing tab title. The last-seen state is stored with GM_setValue so a page
@@ -237,9 +242,9 @@
     DUE_DATE = w.dueAt ?? null;
     STORAGE_KEY = `gradeWatcher:${COURSE_ID}:${ASSIGNMENT_ID}`;
     log(`Watching "${ASSIGNMENT_NAME}" (assignment ${ASSIGNMENT_ID})`);
-    if (pollTimer) clearInterval(pollTimer);
+    if (ticker) ticker.stop();
     poll();
-    pollTimer = setInterval(poll, POLL_SECONDS * 1000);
+    ticker = startTicker();
   }
 
   // The grades page renders one tr#submission_<numeric id> per real assignment
@@ -309,9 +314,33 @@
     });
   }
 
-  // ---------- Diff + main poll ----------
-  let pollTimer = null;
+  // ---------- Poll ticker ----------
+  // Chrome batches main-thread timers in hidden tabs to ~1/min after 5 minutes
+  // ("intensive throttling"), but dedicated Web Worker timers are exempt, and so
+  // is the message-event handler they wake. Running the interval in a tiny Blob
+  // worker keeps the full 15 s cadence in background tabs. Falls back to a plain
+  // (throttleable) setInterval if the site's CSP blocks blob: workers.
+  let ticker = null;
 
+  function startTicker() {
+    try {
+      const url = URL.createObjectURL(new Blob(
+        [`setInterval(() => postMessage(0), ${POLL_SECONDS * 1000});`],
+        { type: 'text/javascript' }
+      ));
+      const worker = new Worker(url);
+      URL.revokeObjectURL(url);
+      worker.onmessage = () => poll();
+      log('Worker ticker running — polling is not throttled in background tabs.');
+      return { stop: () => worker.terminate() };
+    } catch (e) {
+      log('Worker ticker unavailable (CSP?), falling back to setInterval:', e.message);
+      const id = setInterval(poll, POLL_SECONDS * 1000);
+      return { stop: () => clearInterval(id) };
+    }
+  }
+
+  // ---------- Diff + main poll ----------
   function describe(s) {
     const sc = s.score != null ? `${s.score}/${POINTS_POSSIBLE}` : (s.muted ? 'hidden' : 'none');
     return `graded=${s.graded} needsGrading=${s.needsGrading} score=${sc} total=${s.total} muted=${s.muted}`;
@@ -380,9 +409,9 @@
       ? new Date(now.releaseSeenAt).getTime() + POST_RELEASE_WATCH_MS
       : null;
     const stopped = watchUntil != null && Date.now() > watchUntil;
-    if (stopped && pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
+    if (stopped && ticker) {
+      ticker.stop();
+      ticker = null;
       log(`Released over ${POST_RELEASE_WATCH_MS / 60000} min ago — automatic polling stopped.`);
     }
 
