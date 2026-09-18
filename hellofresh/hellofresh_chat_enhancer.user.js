@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         HelloFresh Chat Downloader
-// @namespace    https://github.com/Silverarmor
-// @version      2.0
+// @namespace    https://github.com/Silverarmor/Userscripts
+// @version      2.0.1
 // @description  Downloads a cleaned HelloFresh chat transcript
-// @author       You
+// @author       Silverarmor
 // @match        *://*.hellofresh.co.nz/*
 // @match        *://*.hellofresh.com/*
 // @match        *://*.hellofresh.com.au/*
