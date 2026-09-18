@@ -51,6 +51,7 @@
   Tab *discarding* (Chrome Memory Saver) still stops the script entirely — add
   the Canvas site under chrome://settings/performance "Always keep these sites
   active" on result day.
+  Avoid Safari: it throttles background tabs at the process level (workers too).
 
   Any change to graded / posted score / Total fires a desktop notification, a sound,
   and a flashing tab title. The last-seen state is stored with GM_setValue so a page
