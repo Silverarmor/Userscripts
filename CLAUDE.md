@@ -5,6 +5,8 @@ Personal playground repo of browser userscripts and small utilities. Most files 
 ## Layout
 
 - One directory per target site/service: `panopto/`, `canvas/`, `gmail/`, `netflix/`, `111emergency/`, `hellofresh/`, `explorer/`, `uoa/`.
+- `_local/` and `HTML/` are gitignored scratch space — never commit anything from them.
+- New files are lowercase kebab-case (e.g. `canvas-grade-watcher.user.js`). Some older files use underscores; leave them as-is (renaming breaks auto-update).
 - `README.md` lists every script with a raw-install link and one-line description. **When adding a script, add it to the matching README section.**
 
 ## Userscript conventions
@@ -16,6 +18,7 @@ Metadata block (see any existing script for reference):
 - `@updateURL` / `@downloadURL` point at the raw GitHub URL on `master` matching the file's path. Renaming or moving a file breaks auto-update for existing installs; avoid it.
 - `@match` patterns are deliberately narrow (often UoA-specific hosts). Note they are case-sensitive on the path.
 - `@author Silverarmor`, `@namespace` and `@homepageURL` point at this repo.
+- `@grant` lists only the `GM_*` functions the script actually uses; `@grant none` otherwise.
 
 Code style:
 
