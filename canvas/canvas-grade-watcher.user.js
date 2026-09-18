@@ -1,39 +1,46 @@
 // ==UserScript==
-// @name         Canvas - Grade Watcher (ENGGEN 403 Team Project)
+// @name         Canvas - Grade Watcher
 // @namespace    https://github.com/Silverarmor/Userscripts
-// @version      1.2.0
-// @description  Polls Canvas and notifies when the Team Project is graded (planner API), when the score is posted (xx/25 on the grades page), or when the course Total changes.
+// @version      2.0.0
+// @description  Watch any assignment on a Canvas grades page: notifies when it is graded (planner API), when the score is posted, or when the course Total changes.
 // @author       Silverarmor
-// @match        https://canvas.auckland.ac.nz/courses/142383/grades*
+// @match        https://canvas.auckland.ac.nz/courses/*/grades*
 // @homepageURL  https://github.com/Silverarmor/Userscripts
 // @updateURL    https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas/canvas-grade-watcher.user.js
 // @downloadURL  https://raw.githubusercontent.com/Silverarmor/Userscripts/master/canvas/canvas-grade-watcher.user.js
 // @grant        GM_notification
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @run-at       document-idle
 // ==/UserScript==
 
 /*
   HOW IT WORKS
   ------------
-  Leave the ENGGEN 403 grades page (https://canvas.auckland.ac.nz/courses/142383/grades)
-  open in a tab. Every POLL_SECONDS the script, without reloading the page:
+  Open any course's grades page (https://canvas.auckland.ac.nz/courses/<id>/grades)
+  and click the badge in the bottom-right corner to pick which assignment to watch
+  (the list comes from the #submission_<id> rows on the page; name, points possible
+  and due date are then fetched from the assignments API and stored per course).
+  Shift-click the badge, or use Tampermonkey's menu, to change assignment later.
+
+  Leave the tab open. Every POLL_SECONDS the script, without reloading the page:
 
     1. Calls /api/v1/planner/items (same call as Excigma's assignment-status.js) and
-       reads submissions.graded for plannable_id 520785. This flips to true when the
-       marker has entered a grade, even while it is still hidden from students.
+       reads submissions.graded for the watched plannable_id. This flips to true when
+       the marker has entered a grade, even while it is still hidden from students.
 
-    2. Calls /api/v1/courses/142383/assignments/520785/submissions/self and reads
-       workflow_state, graded_at, posted_at, and score. A change in workflow_state
-       (e.g. submitted -> graded) or graded_at also triggers a notification.
+    2. Calls /api/v1/courses/<course>/assignments/<assignment>/submissions/self and
+       reads workflow_state, graded_at, posted_at, and score. A change in
+       workflow_state (e.g. submitted -> graded) or graded_at also triggers a
+       notification.
 
-    3. Re-fetches the grades page HTML and parses #submission_520785: data-muted, and
-       the score in .assignment_score .grade (an icon-off placeholder until posted,
-       then the server-rendered number, e.g. 23.5, next to "/ 25").
+    3. Re-fetches the grades page HTML and parses #submission_<assignment>:
+       data-muted, and the score in .assignment_score .grade (an icon-off placeholder
+       until posted, then the server-rendered number, e.g. 23.5, next to "/ 25").
 
-    4. Calls /api/v1/courses/142383/enrollments?user_id=self and reads
-       grades.current_score, which is the course Total shown on the page (99.08%).
+    4. Calls /api/v1/courses/<course>/enrollments?user_id=self and reads
+       grades.current_score, which is the course Total shown on the page.
        (The Total in the raw page HTML is only a placeholder; Canvas fills it in with JS.)
 
   Note: browsers throttle timers in background tabs (Chrome drops to roughly once a
@@ -49,25 +56,29 @@
   polling stops — there is nothing left to watch for. The badge shows the final
   score; clicking it still polls on demand.
 
-  Click the small badge in the bottom-right corner to poll immediately, or to grant
-  browser notification permission the first time. Right-click it to fire a test
-  notification (desktop notification + beep + flashing tab title).
+  Click the badge to poll immediately, or to grant browser notification permission
+  the first time. Right-click it to fire a test notification (desktop notification
+  + beep + flashing tab title).
 */
 
 (function () {
   'use strict';
 
   // ---------- Config ----------
-  const COURSE_ID = 142383;
-  const ASSIGNMENT_ID = 520785;
-  const ASSIGNMENT_NAME = 'Team Project';
-  const POINTS_POSSIBLE = 25;
-  const DUE_DATE = '2026-08-28T05:00:00Z'; // used to build a narrow planner window
   const POLL_SECONDS = 15;
-  const STORAGE_KEY = `gradeWatcher:${COURSE_ID}:${ASSIGNMENT_ID}`;
+
+  const COURSE_ID = Number((location.pathname.match(/\/courses\/(\d+)/) || [])[1]);
+  const WATCH_KEY = `gradeWatcher:${COURSE_ID}:watched`;
+
+  // Set from the stored watch config in startWatching().
+  let ASSIGNMENT_ID = null;
+  let ASSIGNMENT_NAME = null;
+  let POINTS_POSSIBLE = null;
+  let DUE_DATE = null; // used to build a narrow planner window
+  let STORAGE_KEY = null;
 
   const GRADES_URL = `/courses/${COURSE_ID}/grades`;
-  const SUBMISSION_URL = `/api/v1/courses/${COURSE_ID}/assignments/${ASSIGNMENT_ID}/submissions/self`;
+  const submissionUrl = () => `/api/v1/courses/${COURSE_ID}/assignments/${ASSIGNMENT_ID}/submissions/self`;
   const ENROLLMENT_URL = `/api/v1/courses/${COURSE_ID}/enrollments?user_id=self&type[]=StudentEnrollment`;
 
   // ---------- Small helpers ----------
@@ -100,8 +111,11 @@
 
   // ---------- Signal 1: planner API (graded: true even while hidden) ----------
   async function checkPlanner() {
-    const start = isoDaysFrom(DUE_DATE, -7);
-    const end = isoDaysFrom(DUE_DATE, +7);
+    // A narrow window around the due date when known, otherwise a wide one around today.
+    const base = DUE_DATE || new Date().toISOString();
+    const span = DUE_DATE ? 7 : 60;
+    const start = isoDaysFrom(base, -span);
+    const end = isoDaysFrom(base, +span);
     const items = await fetchJson(
       `/api/v1/planner/items?start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}&per_page=100`
     );
@@ -121,7 +135,7 @@
   // ---------- Signal 2: submission API (extra info, logged) ----------
   async function checkSubmission() {
     try {
-      const sub = await fetchJson(SUBMISSION_URL);
+      const sub = await fetchJson(submissionUrl());
       return {
         workflowState: sub.workflow_state ?? null,
         gradedAt: sub.graded_at ?? null,
@@ -207,6 +221,91 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden) stop(); }, { once: true });
   }
 
+  // ---------- Watched-assignment config + picker ----------
+  function loadWatched() {
+    try { return JSON.parse(GM_getValue(WATCH_KEY, 'null')); } catch { return null; }
+  }
+  function saveWatched(w) { GM_setValue(WATCH_KEY, JSON.stringify(w)); }
+
+  function startWatching(w) {
+    ASSIGNMENT_ID = w.assignmentId;
+    ASSIGNMENT_NAME = w.name;
+    POINTS_POSSIBLE = w.pointsPossible ?? '?';
+    DUE_DATE = w.dueAt ?? null;
+    STORAGE_KEY = `gradeWatcher:${COURSE_ID}:${ASSIGNMENT_ID}`;
+    log(`Watching "${ASSIGNMENT_NAME}" (assignment ${ASSIGNMENT_ID})`);
+    if (pollTimer) clearInterval(pollTimer);
+    poll();
+    pollTimer = setInterval(poll, POLL_SECONDS * 1000);
+  }
+
+  // The grades page renders one tr#submission_<numeric id> per real assignment
+  // (group/total rows have non-numeric suffixes and are skipped).
+  function listAssignmentsOnPage() {
+    return [...document.querySelectorAll('tr[id^="submission_"]')]
+      .map(row => {
+        const m = row.id.match(/^submission_(\d+)$/);
+        const title = row.querySelector('th.title a')?.textContent.trim();
+        return m && title ? { id: Number(m[1]), title } : null;
+      })
+      .filter(Boolean);
+  }
+
+  let picker = null;
+  function openPicker() {
+    if (picker) { picker.remove(); picker = null; }
+    const options = listAssignmentsOnPage();
+    if (!options.length) {
+      notify('Grade Watcher', 'No assignment rows found on this page — open the course grades page first.');
+      return;
+    }
+    picker = document.createElement('div');
+    Object.assign(picker.style, {
+      position: 'fixed', right: '12px', bottom: '48px', zIndex: 99999,
+      padding: '10px', borderRadius: '6px', background: '#fff', color: '#000',
+      fontFamily: 'system-ui, sans-serif', fontSize: '13px',
+      boxShadow: '0 2px 10px rgba(0,0,0,.35)', display: 'flex', gap: '6px', alignItems: 'center',
+    });
+    const select = document.createElement('select');
+    select.style.maxWidth = '260px';
+    options.forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = String(o.id);
+      opt.textContent = o.title;
+      select.appendChild(opt);
+    });
+    if (ASSIGNMENT_ID) select.value = String(ASSIGNMENT_ID);
+    const watchBtn = document.createElement('button');
+    watchBtn.textContent = 'Watch';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '✕';
+    cancelBtn.title = 'Cancel';
+    picker.append(select, watchBtn, cancelBtn);
+    document.body.appendChild(picker);
+
+    cancelBtn.addEventListener('click', () => { picker.remove(); picker = null; });
+    watchBtn.addEventListener('click', async () => {
+      const id = Number(select.value);
+      watchBtn.disabled = true;
+      try {
+        // Authoritative name/points/due date, so nothing needs hardcoding.
+        const a = await fetchJson(`/api/v1/courses/${COURSE_ID}/assignments/${id}`);
+        const w = {
+          assignmentId: id,
+          name: a.name || options.find(o => o.id === id)?.title || `Assignment ${id}`,
+          pointsPossible: a.points_possible ?? null,
+          dueAt: a.due_at ?? null,
+        };
+        saveWatched(w);
+        picker.remove(); picker = null;
+        startWatching(w);
+      } catch (e) {
+        log('Assignment lookup failed:', e.message);
+        watchBtn.disabled = false;
+      }
+    });
+  }
+
   // ---------- Diff + main poll ----------
   let pollTimer = null;
 
@@ -216,6 +315,7 @@
   }
 
   async function poll(manual = false) {
+    if (!ASSIGNMENT_ID) return;
     setBadge('polling…', '#999');
     const prev = loadState();
     const [planner, page, sub, tot] = await Promise.all([
@@ -295,14 +395,17 @@
         padding: '6px 10px', borderRadius: '6px', fontSize: '12px', color: '#fff',
         fontFamily: 'system-ui, sans-serif', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.3)',
       });
-      badge.title = `Click to check now (auto every ${POLL_SECONDS} s) · Right-click to test notifications`;
-      badge.addEventListener('click', () => {
+      badge.title =
+        `Click to check now (auto every ${POLL_SECONDS} s) · ` +
+        `Shift-click to change assignment · Right-click to test notifications`;
+      badge.addEventListener('click', (e) => {
+        if (!ASSIGNMENT_ID || e.shiftKey) { openPicker(); return; }
         if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
         poll(true);
       });
       badge.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        notify(`${ASSIGNMENT_NAME}: test notification`, 'If you can see this, notifications are working.');
+        notify(`${ASSIGNMENT_NAME ?? 'Grade Watcher'}: test notification`, 'If you can see this, notifications are working.');
       });
       document.body.appendChild(badge);
     }
@@ -311,10 +414,20 @@
   }
 
   // ---------- Start ----------
+  if (!COURSE_ID) return; // not a course page
+
   if ('Notification' in window && Notification.permission === 'default') {
     // Permission requests need a user gesture; the badge click handles it.
     log('Click the badge once to allow browser notifications (GM_notification works without it).');
   }
-  poll();
-  pollTimer = setInterval(poll, POLL_SECONDS * 1000);
+  if (typeof GM_registerMenuCommand === 'function') {
+    GM_registerMenuCommand('Choose assignment to watch', openPicker);
+  }
+
+  const watched = loadWatched();
+  if (watched) {
+    startWatching(watched);
+  } else {
+    setBadge('Grade Watcher: click to choose an assignment', '#666');
+  }
 })();
