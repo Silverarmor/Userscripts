@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Canvas - Grade Watcher
 // @namespace    https://github.com/Silverarmor/Userscripts
-// @version      2.0.0
+// @version      2.1.0
 // @description  Watch any assignment on a Canvas grades page: notifies when it is graded (planner API), when the score is posted, or when the course Total changes.
 // @author       Silverarmor
 // @match        https://canvas.auckland.ac.nz/courses/*/grades*
@@ -52,9 +52,11 @@
   and a flashing tab title. The last-seen state is stored with GM_setValue so a page
   reload does not re-notify you for something you already know about.
 
-  Once the score is released (a number is visible on the grades page) automatic
-  polling stops — there is nothing left to watch for. The badge shows the final
-  score; clicking it still polls on demand.
+  Once the score is released (a number is visible on the grades page) the script
+  keeps polling for another hour, since comments and feedback often come out in
+  the minutes after release (release time is posted_at when the API provides it,
+  otherwise when the score was first seen). After that it stops — the badge shows
+  the final score, and clicking it still polls on demand.
 
   Click the badge to poll immediately, or to grant browser notification permission
   the first time. Right-click it to fire a test notification (desktop notification
@@ -66,6 +68,7 @@
 
   // ---------- Config ----------
   const POLL_SECONDS = 15;
+  const POST_RELEASE_WATCH_MS = 60 * 60 * 1000; // keep polling this long after release for late feedback
 
   const COURSE_ID = Number((location.pathname.match(/\/courses\/(\d+)/) || [])[1]);
   const WATCH_KEY = `gradeWatcher:${COURSE_ID}:watched`;
@@ -366,21 +369,29 @@
     } else {
       log('First run, baseline stored:', describe(now));
     }
+    // Score released: comments/feedback often trickle in shortly afterwards, so
+    // keep watching for POST_RELEASE_WATCH_MS past the release before stopping
+    // the auto-poll. Manual badge clicks still poll on demand.
+    const released = now.score != null;
+    now.releaseSeenAt = prev?.releaseSeenAt ?? (released ? (now.postedAt ?? now.checkedAt) : null);
     saveState(now);
 
-    // Score released: nothing left to watch for, so stop the auto-poll.
-    // Manual badge clicks still poll on demand.
-    const released = now.score != null;
-    if (released && pollTimer) {
+    const watchUntil = now.releaseSeenAt
+      ? new Date(now.releaseSeenAt).getTime() + POST_RELEASE_WATCH_MS
+      : null;
+    const stopped = watchUntil != null && Date.now() > watchUntil;
+    if (stopped && pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
-      log('Score released — automatic polling stopped.');
+      log(`Released over ${POST_RELEASE_WATCH_MS / 60000} min ago — automatic polling stopped.`);
     }
 
     setBadge(
       `${ASSIGNMENT_NAME}: ${now.graded ? 'GRADED' : 'not graded'} · ` +
       `${released ? now.score + '/' + POINTS_POSSIBLE : 'hidden'} · Total ${now.total ?? '?'} · ` +
-      `${released ? 'released, polling stopped' : new Date().toLocaleTimeString()}`,
+      `${stopped ? 'released, polling stopped'
+        : released ? `released, watching feedback until ${new Date(watchUntil).toLocaleTimeString()}`
+        : new Date().toLocaleTimeString()}`,
       released ? '#2a2' : now.graded ? '#e80' : '#38c'
     );
   }
