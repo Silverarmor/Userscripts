@@ -48,6 +48,7 @@ For example, this raw link should prompt Tampermonkey to install a Canvas helper
 ## Other Utilities
 
 - [uoa/uoa-course-components.md](uoa/uoa-course-components.md): Node.js command-line scraper for the public University of Auckland course catalogue. It outputs class component mappings, such as `LEC` to `Lecture`, plus a course code/title CSV.
+- [pdf/merge_and_link.py](pdf/merge_and_link.py): Python (PyMuPDF) command-line tool that merges a Word-exported main report PDF with its appendices PDF into `YYYYMMDD HHMM Merged.pdf`. It keeps both files' internal links and bookmarks, links TOC / List of Figures / List of Tables entries into the appendix, and turns plain-text references like `Table A1-1` or `Appendix B5` into links. Requires `pip install pymupdf`; see the checklist at the top of the script before running.
 
 ## Helper Scripts
 
