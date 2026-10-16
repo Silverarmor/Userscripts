@@ -106,7 +106,10 @@ def is_toc_line(ws, page_width):
         return False
     before = ws[-2]
     leaders = re.search(r"[.\u2026]{3,}$", before[4]) is not None
-    return leaders or ws[-1][0] - before[2] > 18
+    gap = ws[-1][0] - before[2]
+    # long entries can push the tab right up to the number, so accept a small
+    # gap when the line starts like an entry ("Table A5-12", "A2.2", ...)
+    return leaders or gap > 18 or (gap > 1 and starts_like_entry(" ".join(w[4] for w in ws)))
 
 
 def starts_like_entry(text):
