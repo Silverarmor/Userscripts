@@ -1,4 +1,6 @@
 """
+merge_and_link.py  -  CIVIL 756 Phase 2, Team L
+
 Merges the main report PDF and the appendices PDF into
 "YYYYMMDD HHMM Merged.pdf" (saved next to the main report PDF) and fixes up
 navigation in the merged file.
@@ -58,7 +60,7 @@ SECTION_LABEL = re.compile(r"^(?:[A-Z]|[A-Z]?\d+(?:\.\d+)*)$")
 KEYWORDS = {
     "table": "table", "tables": "table",
     "figure": "figure", "figures": "figure", "fig": "figure", "figs": "figure",
-    "appendix": "section",
+    "appendix": "section", "appendices": "section",
     "section": "section", "sections": "section",
 }
 JOINERS = {"and", "or", "to", "&", "-", ",", "and/or"}
@@ -98,12 +100,12 @@ def is_toc_line(ws, page_width):
     last = ws[-1][4].strip()
     if ws[-1][2] < 0.7 * page_width:
         return False
-    if re.search(r"[.…]{3,}\d+$", last):      # leaders glued to the number
+    if re.search(r"[.\u2026]{3,}\d+$", last):      # leaders glued to the number
         return True
     if len(ws) < 2 or not last.isdigit():
         return False
     before = ws[-2]
-    leaders = re.search(r"[.…]{3,}$", before[4]) is not None
+    leaders = re.search(r"[.\u2026]{3,}$", before[4]) is not None
     return leaders or ws[-1][0] - before[2] > 18
 
 
@@ -339,6 +341,10 @@ def main():
                     if not first and tok.lower() in JOINERS:
                         j += 1
                         continue
+                    if kw == "section" and "-" in tok:          # range "A1.1-A1.6": link to start
+                        parts = tok.split("-")
+                        if len(parts) == 2 and all(SECTION_LABEL.match(x) for x in parts):
+                            tok = parts[0]
                     if not pattern.match(tok) or words[j][5] != words[i][5]:
                         break                               # not a label, or a different paragraph
                     r = pymupdf.Rect(words[j][:4])
