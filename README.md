@@ -50,6 +50,8 @@ For example, this raw link should prompt Tampermonkey to install a Canvas helper
 - [uoa/uoa-course-components.md](uoa/uoa-course-components.md): Node.js command-line scraper for the public University of Auckland course catalogue. It outputs class component mappings, such as `LEC` to `Lecture`, plus a course code/title CSV.
 - [pdf/merge_and_link.py](pdf/merge_and_link.py): Python (PyMuPDF) command-line tool that merges a Word-exported main report PDF with its appendices PDF into `YYYYMMDD HHMM Merged.pdf`. It keeps both files' internal links and bookmarks, links TOC / List of Figures / List of Tables entries into the appendix, and turns plain-text references like `Table A1-1` or `Appendix B5` into links. Requires `pip install pymupdf`; see the checklist at the top of the script before running.
 
+- [canvas/pi-grade-watcher](canvas/pi-grade-watcher/README.md): Headless version of the Canvas grade watcher for a Raspberry Pi. It polls Canvas every 15 s and sends Pushover emergency alerts when an assignment is marked (still hidden) or its grade is released. When the session expires it logs back in with a headless Chromium (Playwright).
+
 ## Helper Scripts
 
 - [explorer/organise-by-year.ps1](explorer/organise-by-year.ps1): Organises media, all files, or selected file extensions into date-based folders using filenames that begin with a selected date format, such as `YYYYMMDD` or `YYYY-MM-DD`, with progress indicators for large folders.

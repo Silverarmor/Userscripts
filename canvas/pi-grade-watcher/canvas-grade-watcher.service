@@ -1,0 +1,16 @@
+[Unit]
+Description=Canvas grade watcher
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+# Change User and the paths below if your username isn't "pi"
+User=pi
+WorkingDirectory=/home/pi/Userscripts/canvas/pi-grade-watcher
+ExecStart=/home/pi/Userscripts/canvas/pi-grade-watcher/.venv/bin/python -u canvas_grade_watcher.py
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
