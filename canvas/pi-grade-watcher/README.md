@@ -7,13 +7,12 @@ in a headless Chromium.
 
 | Event | How it's detected | Pushover priority |
 |---|---|---|
-| Marked but still hidden | `/api/v1/planner/items` → `submissions.graded` | **emergency** |
-| Score released | `.../submissions/self` → `score` / `posted_at` | **emergency** |
-| Submission state changes | `.../submissions/self` → `workflow_state` | **emergency** |
-| Approve UoA MFA (during auto re-login) | browser left the password page | high |
-| Logged out and auto re-login failed | 401 / redirect to login | high |
-| Feedback added | planner `has_feedback` | normal |
-| Course total moves | `/enrollments?user_id=self` → `current_score` | normal |
+| Score released / grade posted | `.../submissions/self` → `score` / `posted_at` | **emergency** |
+| Feedback added | planner `has_feedback` | **emergency** |
+| Course total moves | `/enrollments?user_id=self` → `current_score` | **emergency** |
+| Marked but still hidden | `/api/v1/planner/items` → `submissions.graded` | high |
+| Login needs you (see [Login](#login)) | auto re-login couldn't finish | high |
+| Submission state change on its own | `.../submissions/self` → `workflow_state` | normal |
 
 Emergency alerts repeat every 30 s until you tap **Acknowledge**, for up to 3 h. After a
 score is released the watcher keeps polling for `POST_RELEASE_MINUTES` (feedback), then
@@ -65,7 +64,7 @@ nano watcher.env
 ```
 
 Set `PUSHOVER_TOKEN`, `PUSHOVER_USER` and `WATCH`. To let the Pi log in fully by itself,
-also set `UOA_USERNAME` / `UOA_PASSWORD` (see [Login](#login)).
+also set `UOA_USERNAME`, `UOA_PASSWORD` and `UOA_TOTP_SECRET` (see [Login](#login)).
 
 ### Update later
 
@@ -96,18 +95,29 @@ When Canvas rejects the session, the service opens a headless Chromium (at most 
 
 1. **Silent:** if the UoA login server (iam.auckland.ac.nz) still remembers you, it
    bounces straight back into Canvas. No typing, no alert.
-2. **Password:** if it shows the sign-in form and `UOA_USERNAME`/`UOA_PASSWORD` are set,
-   it fills them in. If MFA is asked for, you get a high-priority Pushover alert saying
-   *approve UoA sign-in*, and it waits `MFA_WAIT_SECONDS` (default 180) for you to approve.
-   If the password is rejected it stops using it until the service restarts, so it
-   can't lock your account.
-3. **Otherwise** you get a high-priority *logged out* alert. Log in manually as below.
-   The running service picks up the new session on its next poll.
+2. **Password + two-factor:** if it shows the sign-in form, it fills `UOA_USERNAME` /
+   `UOA_PASSWORD` and clicks **Sign in**. On the *"Enter your two-factor token"* page it
+   types the current 6-digit code generated from `UOA_TOTP_SECRET`, ticks **Remember me**
+   (`MFA_REMEMBER=1`) and signs in. No alert.
+3. **Needs you:** you get one **high** alert only when it can't finish on its own:
+   the password was rejected (it then stops using it until restart, so it can't lock your
+   account), a two-factor code is needed but no `UOA_TOTP_SECRET` is set, the code was
+   rejected 3 times, or a temporary error (network, browser) happened 3 times in a row.
+   The running service picks up the new session as soon as you log in again.
+
+### The TOTP secret
+
+`UOA_TOTP_SECRET` is the base32 key that your authenticator app turns into 6-digit codes.
+You can get it when you (re)set up two-factor on your UoA account: choose the option to
+enter the key manually / "can't scan the QR code". Add the same key to your phone app and
+to `watcher.env`, so both produce the same codes. The Pi's clock must be right (Raspberry
+Pi OS syncs it by NTP). Anyone holding the password plus this key can log in as you, so
+keep `watcher.env` at `chmod 600` and on the Pi only.
 
 ### First login (pick one)
 
-- **On the Pi, with your password in `watcher.env`:**
-  `.venv/bin/python canvas_grade_watcher.py --relogin`. Approve the MFA prompt when asked.
+- **On the Pi, with your password and TOTP secret in `watcher.env`:**
+  `.venv/bin/python canvas_grade_watcher.py --relogin`.
 - **On a computer with a screen:** install the same thing there (`pip install playwright`
   plus `python -m playwright install chromium`, or have Google Chrome installed), run
   `python canvas_grade_watcher.py --browser-login`, log in in the window that opens,
@@ -116,7 +126,7 @@ When Canvas rejects the session, the service opens a headless Chromium (at most 
 - **Without a browser at all:** in Chrome DevTools (F12) → **Network**, click any
   `canvas.auckland.ac.nz` request, copy the `cookie:` request header, then run
   `.venv/bin/python canvas_grade_watcher.py --set-cookie` and paste it. That only renews the
-  Canvas session, so later automatic re-logins need the password option.
+  Canvas session, so later automatic re-logins need the password + TOTP option.
 
 ## Run as a service
 
@@ -133,6 +143,20 @@ journalctl -u canvas-grade-watcher -f
 
 To watch something new, edit `WATCH` and run `sudo systemctl restart canvas-grade-watcher`.
 Delete `state.json` to reset baselines.
+
+## Or run with pm2
+
+pm2 works as well instead of systemd (it needs Node.js). `ecosystem.config.js` runs the script
+with the venv's Python and doesn't restart it once it exits cleanly after every
+assignment is released:
+
+```bash
+sudo npm install -g pm2
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup          # then run the sudo command it prints, so it starts on boot
+pm2 logs canvas-grade-watcher
+```
 
 ## Commands
 

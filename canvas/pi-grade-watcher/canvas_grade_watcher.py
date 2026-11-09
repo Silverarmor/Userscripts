@@ -11,9 +11,9 @@ and pushes an urgent alert to your phone when a watched assignment:
   * gets feedback                               (planner has_feedback -> true)
   * moves the course Total                      (enrollments grades.current_score)
 
-Alerts go to Pushover. Marked / released alerts use emergency priority, which
-repeats until you tap Acknowledge in the app. Feedback and total changes are normal
-priority; "session expired" is high priority (bypasses quiet hours, no repeat).
+Alerts go to Pushover. Score released / feedback / total changed use emergency
+priority (repeats until you tap Acknowledge). "Marked but still hidden" is high.
+Login problems are high, and only sent when you need to do something.
 
 Polling uses only the Python standard library (python3 >= 3.8). Automatic re-login
 when the Canvas session expires uses a headless Chromium via Playwright (optional:
@@ -293,6 +293,38 @@ def _launch(p, headless: bool):
             raise first
 
 
+def totp(secret: str, offset: int = 0, step: int = 30, digits: int = 6) -> str:
+    """RFC 6238 code from a base32 authenticator secret (same as Google/Microsoft Authenticator)."""
+    import base64, hashlib, hmac, struct
+    secret = secret.replace(" ", "").upper()
+    key = base64.b32decode(secret + "=" * (-len(secret) % 8))
+    counter = int(time.time() // step) + offset
+    h = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    o = h[-1] & 0x0F
+    return str((struct.unpack(">I", h[o:o + 4])[0] & 0x7FFFFFFF) % 10 ** digits).zfill(digits)
+
+
+def _submit(field):
+    """Submit the field's form the way a person would: click its Sign in button.
+
+    UoA's Shibboleth forms need the button's name (_eventId_proceed) in the POST, and a
+    form with no submit button ignores Enter, so Enter is only the fallback.
+    """
+    btn = field.locator("xpath=ancestor::form[1]").locator(
+        "button[name=_eventId_proceed], button[type=submit], input[type=submit], button:not([type])")
+    if btn.count():
+        btn.first.click()
+    else:
+        field.press("Enter")
+
+
+# Visible form fields on the current page: type/name/id/autocomplete only, never values.
+_INPUTS_JS = """() => [...document.querySelectorAll('input,button,select')]
+  .filter(e => e.offsetParent !== null && e.type !== 'hidden')
+  .map(e => [e.tagName.toLowerCase(), e.type, e.name || e.id, e.autocomplete,
+             (e.placeholder || e.innerText || '').trim().slice(0, 25)].filter(Boolean).join(':'))"""
+
+
 def browser_login(base: str, store: CookieStore, interactive: bool = False) -> str:
     """Log in to Canvas in a real Chromium and copy its session into `store`.
 
@@ -332,9 +364,20 @@ def browser_login(base: str, store: CookieStore, interactive: bool = False) -> s
 
             submitted_at = None
             mfa_alerted = False
+            token_sent_at, tries = 0.0, 0
             deadline = time.time() + wait_s
+            debug = interactive or cfg("BROWSER_DEBUG") == "1"
+            last_seen = None
             while time.time() < deadline:
                 url = urllib.parse.urlparse(page.url)
+                if debug:
+                    try:
+                        sig = (url.hostname, url.path, page.evaluate(_INPUTS_JS))
+                    except Exception:
+                        sig = (url.hostname, url.path, "?")
+                    if sig != last_seen:
+                        log(f"browser: at {sig[0]}{sig[1]}  inputs={sig[2]}")
+                        last_seen = sig
                 if url.hostname == host and not url.path.startswith("/login"):
                     r = ctx.request.get(base + "/api/v1/users/self",
                                         headers={"Accept": "application/json"})
@@ -351,6 +394,8 @@ def browser_login(base: str, store: CookieStore, interactive: bool = False) -> s
                 if not interactive:
                     pw_box = page.locator("input[type=password]:visible")
                     on_login_form = pw_box.count() > 0
+                    token_box = page.locator("input[name=j_token]:visible, "
+                                             "input[autocomplete=one-time-code]:visible")
                     if on_login_form and submitted_at is None:
                         if not (user and pw):
                             raise BrowserLoginError(
@@ -360,17 +405,41 @@ def browser_login(base: str, store: CookieStore, interactive: bool = False) -> s
                         page.locator("input[name=j_username], input[type=email], "
                                      "input[autocomplete=username]").first.fill(user)
                         pw_box.first.fill(pw)
-                        pw_box.first.press("Enter")
+                        _submit(pw_box.first)
                         submitted_at = time.time()
                     elif on_login_form and submitted_at and time.time() - submitted_at > 10:
                         raise BrowserLoginError(
                             "UoA rejected the username/password (still on the login form)")
+                    elif token_box.count() > 0 and not on_login_form:
+                        # UoA two-factor page: "Enter your two-factor token" + "Remember me"
+                        if token_sent_at and time.time() - token_sent_at < 12:
+                            pass  # just submitted a code; give it time to go through
+                        else:
+                            if token_sent_at:
+                                tries += 1
+                                token_sent_at = 0.0
+                                if tries >= 3:
+                                    raise BrowserLoginError("UoA rejected the two-factor code 3 times")
+                                log("browser: two-factor code not accepted, trying again")
+                            if not cfg("UOA_TOTP_SECRET"):
+                                raise BrowserLoginError(
+                                    "UoA asked for a two-factor code and UOA_TOTP_SECRET is not set")
+                            # on a retry, use the next 30 s window in case the clock is slightly off
+                            code = totp(cfg("UOA_TOTP_SECRET"), offset=1 if tries else 0)
+                            log("browser: entering generated two-factor code")
+                            remember = page.locator("input[name=rememberMe]:visible")
+                            if remember.count() and cfg("MFA_REMEMBER", "1") == "1":
+                                remember.first.check()
+                            token_box.first.fill(code)
+                            _submit(token_box.first)
+                            token_sent_at = time.time()
                     elif (submitted_at and not mfa_alerted and not on_login_form
-                          and url.hostname != host
-                          and time.time() - submitted_at > 8):
+                          and token_box.count() == 0 and url.hostname != host
+                          and time.time() - submitted_at > 15):
+                        # Some other MFA step (e.g. a push to approve): tell the user
                         notify("Canvas watcher: approve UoA sign-in",
-                               f"The watcher is logging back in to Canvas. Approve the MFA prompt "
-                               f"within {wait_s // 60} min.", priority=HIGH)
+                               f"The watcher is logging back in to Canvas and UoA is waiting on "
+                               f"MFA. Approve it within {wait_s // 60} min.", priority=HIGH)
                         mfa_alerted = True
                 page.wait_for_timeout(1000)
             raise BrowserLoginError(f"not logged in after {wait_s}s (stuck at {page.url.split('?')[0]})")
@@ -449,22 +518,27 @@ def snapshot(canvas: Canvas, course: int, aid: int, meta: dict):
 
 
 def diff(prev: dict, now: dict, pts):
-    """Return [(message, urgent)] for changes worth alerting about."""
+    """Return [(message, pushover_priority)] for changes worth alerting about.
+
+    Emergency: score released / posted, feedback added, course total changed.
+    High: marked while still hidden.
+    Normal: submission state change on its own.
+    """
     out = []
     if now.get("graded") is True and prev.get("graded") is not True:
-        out.append(("Marked in Canvas (still hidden) — release is probably close", True))
+        out.append(("Marked in Canvas (still hidden) — release is probably close", HIGH))
     if now.get("score") is not None and prev.get("score") != now.get("score"):
-        out.append((f"Score released: {now['score']}/{pts}", True))
+        out.append((f"Score released: {now['score']}/{pts}", EMERGENCY))
     elif now.get("postedAt") and not prev.get("postedAt"):
-        out.append((f"Grade posted at {now['postedAt']}", True))
+        out.append((f"Grade posted at {now['postedAt']}", EMERGENCY))
     if (now.get("workflowState") and prev.get("workflowState")
             and now["workflowState"] != prev["workflowState"]):
-        out.append((f"Submission state {prev['workflowState']} → {now['workflowState']}", True))
+        out.append((f"Submission state {prev['workflowState']} → {now['workflowState']}", NORMAL))
     if now.get("hasFeedback") and not prev.get("hasFeedback"):
-        out.append(("Feedback added", False))
+        out.append(("Feedback added", EMERGENCY))
     if (now.get("total") is not None and prev.get("total") is not None
             and now["total"] != prev["total"]):
-        out.append((f"Course total {prev['total']}% → {now['total']}%", False))
+        out.append((f"Course total {prev['total']}% → {now['total']}%", EMERGENCY))
     return out
 
 
@@ -478,6 +552,7 @@ class Watcher:
         self.relogin_every = int(cfg("RELOGIN_MIN_INTERVAL", "600"))
         self.last_relogin = 0.0
         self.creds_rejected = False
+        self.relogin_errors = 0
         if not token and not self.cookie_store.cookies and not self.browser:
             sys.exit("No auth: run --set-cookie or --browser-login (or set CANVAS_TOKEN). See README.")
         self.canvas = Canvas(base, token, None if token else self.cookie_store)
@@ -530,15 +605,15 @@ class Watcher:
                 if prev is None:
                     log("  baseline stored")
                     if now.get("graded"):
-                        notify(meta["name"], "Already marked (hidden) at watcher start", priority=NORMAL,
+                        notify(meta["name"], "Already marked (hidden) at watcher start", priority=HIGH,
                                click_url=f"{self.base}/courses/{course}/grades")
                 else:
                     changes = diff(prev, now, meta.get("points"))
                     if changes:
-                        urgent = any(u for _, u in changes)
+                        changes.sort(key=lambda c: -c[1])  # most urgent message first in the title
                         notify(f"{meta['name']}: {changes[0][0]}",
                                "\n".join(m for m, _ in changes),
-                               priority=EMERGENCY if urgent else NORMAL,
+                               priority=changes[0][1],
                                click_url=f"{self.base}/courses/{course}/grades")
                 # once released, keep watching a while for feedback, then stop
                 if now.get("score") is not None and not entry.get("releasedAt"):
@@ -559,12 +634,19 @@ class Watcher:
                 try:
                     browser_login(self.base, self.cookie_store)
                     self.auth_alerted = False
+                    self.relogin_errors = 0
                     return  # next poll uses the fresh session
-                except Exception as be:
+                except BrowserLoginError as be:  # needs you: bad password, no TOTP secret, ...
                     log("browser re-login failed:", be)
-                    if "rejected" in str(be):
+                    if "rejected the username/password" in str(be):
                         self.creds_rejected = True
-                    reason = f"Automatic browser re-login failed: {be}."
+                    reason = f"Automatic re-login needs you: {be}."
+                except Exception as be:  # network/browser hiccup: retry quietly, alert if it persists
+                    self.relogin_errors += 1
+                    log(f"browser re-login error ({self.relogin_errors} in a row):", repr(be))
+                    if self.relogin_errors < 3:
+                        return
+                    reason = f"Automatic re-login keeps failing: {be}."
             elif self.browser:
                 return  # waiting out RELOGIN_MIN_INTERVAL before the next browser attempt
             if not self.auth_alerted:
