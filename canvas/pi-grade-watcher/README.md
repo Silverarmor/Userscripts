@@ -31,13 +31,15 @@ HTTP and uses a few MB.
 
 ## Install (only this folder, via git)
 
-A sparse checkout downloads just `canvas/pi-grade-watcher`, not the whole repo:
+A sparse checkout downloads and checks out only `canvas/pi-grade-watcher`, not the rest
+of the repo:
 
 ```bash
 sudo apt install -y git python3-venv
-git clone --filter=blob:none --sparse https://github.com/Silverarmor/Userscripts.git ~/Userscripts
+git clone --filter=blob:none --no-checkout https://github.com/Silverarmor/Userscripts.git ~/Userscripts
 cd ~/Userscripts
-git sparse-checkout set canvas/pi-grade-watcher
+git sparse-checkout set --no-cone /canvas/pi-grade-watcher/
+git checkout master
 cd canvas/pi-grade-watcher
 ```
 
