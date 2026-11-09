@@ -14,7 +14,7 @@ in a headless Chromium.
 | Login needs you (see [Login](#login)) | auto re-login couldn't finish | high |
 | Submission state change on its own | `.../submissions/self` → `workflow_state` | normal |
 
-Emergency alerts repeat every 30 s until you tap **Acknowledge**, for up to 3 h. After a
+Emergency alerts repeat every 30 s until you tap **Acknowledge**, for up to 5 min (`PUSHOVER_EXPIRE`, max 3 h). After a
 score is released the watcher keeps polling for `POST_RELEASE_MINUTES` (feedback), then
 stops. When every watched assignment is released the service exits.
 

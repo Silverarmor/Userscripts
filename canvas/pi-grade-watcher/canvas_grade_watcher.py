@@ -49,15 +49,22 @@ HERE = Path(__file__).resolve().parent
 # ---------------------------------------------------------------- config
 
 def load_env_file(path: Path) -> None:
-    """Minimal KEY=VALUE loader; real env vars win over the file."""
+    """Minimal KEY=VALUE loader; real env vars win over the file.
+
+    Values are taken literally: no shell expansion, and # only starts a comment at the
+    beginning of a line, so passwords like p@ss#w$rd!"x need no quoting. One matching
+    pair of surrounding quotes is removed if present (use it to keep leading/trailing
+    spaces); quotes anywhere else are kept.
+    """
     if not path.is_file():
         return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        if not line.strip() or line.lstrip().startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        v = v.strip().strip('"').strip("'")
+        v = v.strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+            v = v[1:-1]
         os.environ.setdefault(k.strip(), v)
 
 
@@ -240,7 +247,7 @@ def notify(title: str, message: str, priority: int = EMERGENCY, click_url: str =
             "priority": priority}
     if priority == EMERGENCY:
         data.update(retry=cfg("PUSHOVER_RETRY", "30"),      # seconds between repeats (min 30)
-                    expire=cfg("PUSHOVER_EXPIRE", "10800"),  # stop repeating after this (max 3 h)
+                    expire=cfg("PUSHOVER_EXPIRE", "300"),  # stop repeating after 5 min (Pushover max 3 h)
                     sound=cfg("PUSHOVER_SOUND", "persistent"))
     if click_url:
         data.update(url=click_url, url_title="Open grades")
