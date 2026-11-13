@@ -473,7 +473,12 @@ def iso(dt):
 
 
 def snapshot(canvas: Canvas, course: int, aid: int, meta: dict):
-    """Collect every signal for one assignment. Missing signals come back as None."""
+    """Collect every signal for one assignment.
+
+    A signal whose request fails is left OUT of the result (not set to None), so the
+    caller keeps the last known value. Otherwise one timed-out request would record
+    score=None and the next good poll would announce the same release again.
+    """
     s = {"checkedAt": iso(datetime.now(timezone.utc))}
 
     # 1. planner: graded flips true when marked, even while hidden from students
@@ -486,15 +491,17 @@ def snapshot(canvas: Canvas, course: int, aid: int, meta: dict):
             "per_page": 100, "context_codes[]": f"course_{course}"})
         item = next((i for i in items if i.get("plannable_type") == "assignment"
                      and i.get("plannable_id") == aid), None)
-        sub = (item or {}).get("submissions") or {}
-        s["graded"] = bool(sub.get("graded")) if item else None
-        s["needsGrading"] = bool(sub.get("needs_grading")) if item else None
-        s["hasFeedback"] = bool(sub.get("has_feedback")) if item else None
+        if item:
+            sub = item.get("submissions") or {}
+            s["graded"] = bool(sub.get("graded"))
+            s["needsGrading"] = bool(sub.get("needs_grading"))
+            s["hasFeedback"] = bool(sub.get("has_feedback"))
+        else:
+            log("  planner: assignment not in the returned items, keeping last values")
     except AuthError:
         raise
     except Exception as e:
-        log(f"  planner failed: {e}")
-        s["graded"] = s["needsGrading"] = s["hasFeedback"] = None
+        log(f"  planner failed (keeping last values): {e}")
 
     # 2. own submission: score/grade only appear once posted
     try:
@@ -507,7 +514,7 @@ def snapshot(canvas: Canvas, course: int, aid: int, meta: dict):
     except AuthError:
         raise
     except Exception as e:
-        log(f"  submission failed: {e}")
+        log(f"  submission failed (keeping last values): {e}")
 
     # 3. course total
     try:
@@ -515,11 +522,12 @@ def snapshot(canvas: Canvas, course: int, aid: int, meta: dict):
                          {"user_id": "self", "type[]": "StudentEnrollment"})
         g = (next((e for e in enr if e.get("type") == "StudentEnrollment"), None) or
              (enr[0] if enr else {})).get("grades") or {}
-        s["total"] = g.get("current_score")
+        if g.get("current_score") is not None:
+            s["total"] = g["current_score"]
     except AuthError:
         raise
     except Exception as e:
-        log(f"  enrollments failed: {e}")
+        log(f"  enrollments failed (keeping last value): {e}")
 
     return s
 
@@ -618,8 +626,10 @@ class Watcher:
                     meta = entry["meta"]
                     if entry.get("done"):
                         continue
-                    now = snapshot(self.canvas, course, aid, meta)
                     prev = entry.get("last")
+                    # signals that failed this poll are missing from the snapshot: carry the
+                    # last known values forward so a hiccup never looks like a change
+                    now = {**(prev or {}), **snapshot(self.canvas, course, aid, meta)}
                     log(f"{meta['name']}: graded={now.get('graded')} state={now.get('workflowState')} "
                         f"score={now.get('score')} posted={now.get('postedAt')} "
                         f"feedback={now.get('hasFeedback')} total={now.get('total')}")
