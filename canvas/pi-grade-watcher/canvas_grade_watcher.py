@@ -609,7 +609,7 @@ class Watcher:
             return
         if self.cookie_store.reload_if_changed():
             log("cookies.json changed on disk — using the new session")
-        events = []  # (priority, line, course): everything found this poll -> ONE alert
+        events = []  # (priority, line, course): one alert each, sent at the end of the poll
         try:
             try:
                 totals = {}  # course -> course total seen this poll
@@ -655,10 +655,10 @@ class Watcher:
             finally:
                 # Send whatever was found even if a later request failed, then save, so a
                 # change is never recorded as "seen" without having been alerted.
-                if events:
-                    events.sort(key=lambda e: -e[0])  # most urgent first: it becomes the title
-                    notify(events[0][1], "\n".join(e[1] for e in events), priority=events[0][0],
-                           click_url=f"{self.base}/courses/{events[0][2]}/grades")
+                # One alert per change (score released and feedback added are separate,
+                # as are two assignments released together), most urgent first.
+                for pr, line, course in sorted(events, key=lambda e: -e[0]):
+                    notify(line, line, priority=pr, click_url=f"{self.base}/courses/{course}/grades")
                 self._save()
         except AuthError as e:
             log(str(e))

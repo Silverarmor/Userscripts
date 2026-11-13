@@ -14,8 +14,9 @@ in a headless Chromium.
 | Login needs you (see [Login](#login)) | auto re-login couldn't finish | high |
 | Submission state change on its own | `.../submissions/self` → `workflow_state` | normal |
 
-Everything found in one check is sent as **one** alert, titled by the most urgent change
-(the course total is checked once per course, however many of its assignments you watch).
+Each change is its own alert (score released and feedback added are separate, as are two
+assignments released at once). The course total is checked once per course, so it gives one
+alert however many of that course's assignments you watch.
 Only emergency alerts repeat: every 30 s until you tap **Acknowledge**, for up to 5 min
 (`PUSHOVER_EXPIRE`, max 3 h). High and normal alerts arrive once. After a
 score is released the watcher keeps polling for `POST_RELEASE_MINUTES` (feedback), then
