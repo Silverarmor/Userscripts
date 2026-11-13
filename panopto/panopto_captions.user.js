@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Custom .srt captions - panopto.com
 // @namespace    https://github.com/Silverarmor
-// @version      0.1.14
+// @version      0.1.18
 // @description  Allows uploading custom SRT captions to Panopto with persistent per-video storage, custom SRT search, drag-and-drop support, clean page refreshing, and direct MP4 audio/video downloads.
 // @author       Silverarmor
 // @match        https://auckland.au.panopto.com/Panopto/Pages/Viewer.aspx*
@@ -19,12 +19,75 @@
 (function () {
     "use strict";
 
-    console.log("[PanoptoCC] Script booting at v0.1.14");
+    console.log("[PanoptoCC] Script booting at v0.1.18");
 
     let injectedCaptions = null;
     let isCustomSrtActive = false;
     let uploadTimestamp = null;
     let videoUUID = null;
+    // The fetch proxy only works if this script is injected before the viewer
+    // requests captions. Track whether interception actually happened so a
+    // lost race can be detected and recovered from (see checkInjectionHealth).
+    let interceptedCaptions = false;
+    let injectionFailed = false;
+    let injectionRetryHandled = false;
+
+    const MAX_INJECTION_RETRIES = 2;
+
+    function retryCountKey() {
+        return "panoptocc-retry-" + (videoUUID || "unknown");
+    }
+
+    function getRetryCount() {
+        try { return parseInt(sessionStorage.getItem(retryCountKey()), 10) || 0; } catch (e) { return 0; }
+    }
+
+    function setRetryCount(value) {
+        try {
+            if (value > 0) sessionStorage.setItem(retryCountKey(), String(value));
+            else sessionStorage.removeItem(retryCountKey());
+        } catch (e) { }
+    }
+
+    /* -----------------------------
+       GM Storage handoff
+       In Tampermonkey's "UserScripts API Dynamic" mode, GM values are
+       injected as a snapshot that can lag one reload behind a fresh
+       GM_setValue/GM_deleteValue. Mirror the latest save/revert in
+       sessionStorage (synchronous, same-tab) so the reload right after an
+       upload or revert sees the new state; drop the mirror once GM storage
+       has caught up.
+    ----------------------------- */
+    const DELETED_SENTINEL = "__PANOPTOCC_DELETED__";
+
+    function pendingValueKey(uuid) {
+        return "panoptocc-pending-" + uuid;
+    }
+
+    function writeCaptionStore(uuid, serialized) {
+        if (serialized === null) {
+            GM_deleteValue(uuid);
+            try { sessionStorage.setItem(pendingValueKey(uuid), DELETED_SENTINEL); } catch (e) { }
+        } else {
+            GM_setValue(uuid, serialized);
+            try { sessionStorage.setItem(pendingValueKey(uuid), serialized); } catch (e) { }
+        }
+    }
+
+    function readCaptionStore(uuid) {
+        let stored = null;
+        try { stored = GM_getValue(uuid, null); } catch (e) { }
+
+        let pending = null;
+        try { pending = sessionStorage.getItem(pendingValueKey(uuid)); } catch (e) { }
+        if (pending === null) return stored;
+
+        const pendingValue = pending === DELETED_SENTINEL ? null : pending;
+        if (stored === pendingValue) {
+            try { sessionStorage.removeItem(pendingValueKey(uuid)); } catch (e) { }
+        }
+        return pendingValue;
+    }
 
     /* -----------------------------
        Helper: Refresh Page
@@ -58,7 +121,7 @@
 
     if (videoUUID) {
         try {
-            const storedData = GM_getValue(videoUUID, null);
+            const storedData = readCaptionStore(videoUUID);
             if (storedData) {
                 const parsed = JSON.parse(storedData);
                 if (parsed.captions) {
@@ -93,6 +156,8 @@
                 else if (body instanceof URLSearchParams) bodyString = body.toString();
 
                 if (bodyString.includes("getCaptions=true") && injectedCaptions) {
+                    interceptedCaptions = true;
+                    setRetryCount(0);
                     return Promise.resolve(
                         new Response(JSON.stringify(injectedCaptions), {
                             status: 200,
@@ -585,6 +650,7 @@
         btn.style.alignItems = "center";
         btn.style.textDecoration = "none";
         btn.style.boxSizing = "border-box";
+        btn.style.whiteSpace = "nowrap";
     }
 
     function saveAndRefresh(captions) {
@@ -598,14 +664,18 @@
             captions: captions,
             timestamp: formattedDate
         };
-        GM_setValue(videoUUID || getVideoId(), JSON.stringify(dataToStore));
+        writeCaptionStore(videoUUID || getVideoId(), JSON.stringify(dataToStore));
+        setRetryCount(0);
         refreshPage();
     }
 
     function createUploadButton() {
         const btn = document.createElement("button");
         applySharedStyles(btn);
-        btn.textContent = isCustomSrtActive ? "Replace SRT" : "Upload SRT";
+        btn.dataset.panoptoccFullLabel = isCustomSrtActive ? "Replace SRT" : "Upload SRT";
+        btn.dataset.panoptoccShortLabel = isCustomSrtActive ? "Replace" : "Upload";
+        btn.textContent = headerCompact ? btn.dataset.panoptoccShortLabel : btn.dataset.panoptoccFullLabel;
+        btn.title = btn.dataset.panoptoccFullLabel;
         btn.style.backgroundColor = "#1976d2";
         btn.onclick = (e) => {
             e.stopPropagation();
@@ -624,11 +694,15 @@
     function createClearButton() {
         const btn = document.createElement("button");
         applySharedStyles(btn);
-        btn.textContent = "Revert to Default";
+        btn.dataset.panoptoccFullLabel = "Revert to Default";
+        btn.dataset.panoptoccShortLabel = "Revert";
+        btn.textContent = headerCompact ? btn.dataset.panoptoccShortLabel : btn.dataset.panoptoccFullLabel;
+        btn.title = btn.dataset.panoptoccFullLabel;
         btn.style.backgroundColor = "#d32f2f";
         btn.onclick = (e) => {
             e.stopPropagation();
-            GM_deleteValue(videoUUID || getVideoId());
+            writeCaptionStore(videoUUID || getVideoId(), null);
+            setRetryCount(0);
             refreshPage();
         };
         return btn;
@@ -640,11 +714,67 @@
         const btn = document.createElement("a");
         applySharedStyles(btn);
         btn.textContent = "Download";
+        btn.title = "Download audio podcast MP4";
         btn.href = `https://auckland.au.panopto.com/Panopto/Podcast/Download/${uuid}.mp4?mediaTargetType=audioPodcast`;
         btn.download = `AudioPodcast-${uuid}.mp4`;
         btn.target = "_blank";
         btn.style.backgroundColor = "#2e7d32";
         return btn;
+    }
+
+    /* -----------------------------
+       Adaptive header sizing
+       Full button labels by default; switch to one-word labels and hide
+       the Panopto logo only while the title is squeezed (its ellipsis is
+       active). Expanding back requires enough slack to refit the full
+       labels and logo, so the two states cannot oscillate.
+    ----------------------------- */
+    const COMPACT_CLASS = "panoptocc-compact-header";
+    const EXPAND_TRIAL_INTERVAL_MS = 1000;
+    let headerCompact = false;
+    let lastExpandTrial = 0;
+
+    function headerLabelButtons() {
+        return Array.from(document.querySelectorAll("[data-panoptocc-full-label]"));
+    }
+
+    function applyHeaderLabels() {
+        headerLabelButtons().forEach((btn) => {
+            const label = headerCompact ? btn.dataset.panoptoccShortLabel : btn.dataset.panoptoccFullLabel;
+            if (btn.textContent !== label) btn.textContent = label;
+        });
+        document.documentElement.classList.toggle(COMPACT_CLASS, headerCompact);
+    }
+
+    function updateHeaderCompactness() {
+        const title = document.querySelector("#deliveryTitle");
+        if (!title || !headerLabelButtons().length) return;
+
+        if (!headerCompact) {
+            if (title.scrollWidth > title.clientWidth + 1) {
+                headerCompact = true;
+                applyHeaderLabels();
+            }
+            return;
+        }
+
+        // Trial expansion: restore full labels and logo, then keep them only
+        // if the title does not truncate. The title is shrink-to-fit
+        // (clientWidth === scrollWidth whenever it fits), so truncation is the
+        // only usable signal. Reading scrollWidth forces a synchronous reflow
+        // and no paint happens mid-task, so a failed trial is invisible.
+        // Throttled because the label swap itself triggers the
+        // MutationObserver that calls this.
+        const now = Date.now();
+        if (now - lastExpandTrial < EXPAND_TRIAL_INTERVAL_MS) return;
+        lastExpandTrial = now;
+
+        headerCompact = false;
+        applyHeaderLabels();
+        if (title.scrollWidth > title.clientWidth + 1) {
+            headerCompact = true;
+            applyHeaderLabels();
+        }
     }
 
     /* -----------------------------
@@ -670,10 +800,35 @@
     }
 
     /* -----------------------------
+       Injection Health Check
+    ----------------------------- */
+    // If the viewer rendered its transcript without our fetch proxy ever
+    // intercepting the captions request, this script was injected too late
+    // (Tampermonkey injection race) and Panopto's original captions are
+    // showing. Reload to retry; give up after MAX_INJECTION_RETRIES.
+    function checkInjectionHealth() {
+        if (!isCustomSrtActive || interceptedCaptions || injectionRetryHandled) return;
+        if (!getTranscriptRows().length) return;
+
+        injectionRetryHandled = true;
+        const attempts = getRetryCount();
+        if (attempts < MAX_INJECTION_RETRIES) {
+            setRetryCount(attempts + 1);
+            console.warn(`[PanoptoCC] Captions request was not intercepted (injected too late). Reloading to retry (${attempts + 1}/${MAX_INJECTION_RETRIES})`);
+            refreshPage();
+        } else {
+            injectionFailed = true;
+            console.error("[PanoptoCC] Could not intercept the captions request after retries - Panopto's original captions are showing.");
+        }
+    }
+
+    /* -----------------------------
        DOM Observer
     ----------------------------- */
     function startObservers() {
         const observer = new MutationObserver(() => {
+            checkInjectionHealth();
+            updateHeaderCompactness();
             initCustomSearch();
             if (isCustomSrtActive) lockCustomSearchControls();
             initJumpToCurrentCaptionButton();
@@ -689,21 +844,44 @@
 
             if (isCustomSrtActive) {
                 const warningSpan = document.querySelector(".css-b93d1p .css-1i5jedo");
-                if (warningSpan && !warningSpan.dataset.statusSwapped) {
-                    warningSpan.dataset.statusSwapped = "true";
+                if (warningSpan) {
                     const timeInfo = uploadTimestamp ? ` (Uploaded: ${uploadTimestamp})` : "";
-                    warningSpan.textContent = `Custom SRT is active${timeInfo}`;
-                    warningSpan.parentElement.style.color = "#1976d2";
+                    const statusText = injectionFailed
+                        ? "Custom SRT failed to apply - Panopto's captions are showing. Reload to retry."
+                        : `Custom SRT is active${timeInfo}`;
+                    if (warningSpan.textContent !== statusText) {
+                        warningSpan.textContent = statusText;
+                        warningSpan.parentElement.style.color = injectionFailed ? "#d32f2f" : "#1976d2";
+                    }
                 }
             }
         });
         observer.observe(document.body, { childList: true, subtree: true });
+        let resizeTimer = 0;
+        window.addEventListener("resize", () => {
+            window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(updateHeaderCompactness, 150);
+        });
+        checkInjectionHealth();
         initCustomSearch();
         if (isCustomSrtActive) lockCustomSearchControls();
         initJumpToCurrentCaptionButton();
     }
 
     GM_addStyle(`
+        .panoptocc-compact-header #logoContainer.small-logo {
+            display: none !important;
+        }
+        #viewerHeader .header-left {
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+            overflow: hidden !important;
+        }
+        #deliveryTitle {
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+        }
         #searchRegion.custom-srt-search-active {
             position: relative;
         }
