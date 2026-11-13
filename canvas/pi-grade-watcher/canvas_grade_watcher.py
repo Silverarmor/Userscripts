@@ -527,9 +527,10 @@ def snapshot(canvas: Canvas, course: int, aid: int, meta: dict):
 def diff(prev: dict, now: dict, pts):
     """Return [(message, pushover_priority)] for changes worth alerting about.
 
-    Emergency: score released / posted, feedback added, course total changed.
+    Emergency: score released / posted, feedback added.
     High: marked while still hidden.
     Normal: submission state change on its own.
+    (Course total changes are tracked once per course in Watcher.poll_once.)
     """
     out = []
     if now.get("graded") is True and prev.get("graded") is not True:
@@ -543,9 +544,9 @@ def diff(prev: dict, now: dict, pts):
         out.append((f"Submission state {prev['workflowState']} → {now['workflowState']}", NORMAL))
     if now.get("hasFeedback") and not prev.get("hasFeedback"):
         out.append(("Feedback added", EMERGENCY))
-    if (now.get("total") is not None and prev.get("total") is not None
-            and now["total"] != prev["total"]):
-        out.append((f"Course total {prev['total']}% → {now['total']}%", EMERGENCY))
+    if any(m.startswith(("Score released", "Grade posted")) for m, _ in out):
+        # "marked (hidden)" and "submitted → graded" are implied by the release itself
+        out = [(m, p) for m, p in out if not m.startswith(("Marked in Canvas", "Submission state"))]
     return out
 
 
@@ -592,45 +593,73 @@ class Watcher:
             log(f"Watching {key}: {entry['meta']['name']} (due {entry['meta']['due_at']})")
         return entry
 
+    def _course_name(self, course):
+        c = self.state.setdefault("_courses", {}).setdefault(str(course), {})
+        if not c.get("name"):
+            try:
+                info = self.canvas.get(f"/api/v1/courses/{course}")
+                c["name"] = info.get("course_code") or info.get("name")
+            except Exception:
+                pass
+        return c.get("name") or f"Course {course}"
+
     def poll_once(self):
         if not self.watches:
             log("WATCH is empty — nothing to do. Use --list <course_id> to find IDs.")
             return
         if self.cookie_store.reload_if_changed():
             log("cookies.json changed on disk — using the new session")
+        events = []  # (priority, line, course): everything found this poll -> ONE alert
         try:
-            for course, aid in self.watches:
-                entry = self._meta(course, aid)
-                meta = entry["meta"]
-                if entry.get("done"):
-                    continue
-                now = snapshot(self.canvas, course, aid, meta)
-                prev = entry.get("last")
-                log(f"{meta['name']}: graded={now.get('graded')} state={now.get('workflowState')} "
-                    f"score={now.get('score')} posted={now.get('postedAt')} "
-                    f"feedback={now.get('hasFeedback')} total={now.get('total')}")
-                if prev is None:
-                    log("  baseline stored")
-                    if now.get("graded"):
-                        notify(meta["name"], "Already marked (hidden) at watcher start", priority=HIGH,
-                               click_url=f"{self.base}/courses/{course}/grades")
-                else:
-                    changes = diff(prev, now, meta.get("points"))
-                    if changes:
-                        changes.sort(key=lambda c: -c[1])  # most urgent message first in the title
-                        notify(f"{meta['name']}: {changes[0][0]}",
-                               "\n".join(m for m, _ in changes),
-                               priority=changes[0][1],
-                               click_url=f"{self.base}/courses/{course}/grades")
-                # once released, keep watching a while for feedback, then stop
-                if now.get("score") is not None and not entry.get("releasedAt"):
-                    entry["releasedAt"] = time.time()
-                if entry.get("releasedAt") and time.time() - entry["releasedAt"] > self.post_release_s:
-                    entry["done"] = True
-                    log(f"  released > {self.post_release_s // 60} min ago — no longer polling this one")
-                entry["last"] = now
+            try:
+                totals = {}  # course -> course total seen this poll
+                for course, aid in self.watches:
+                    entry = self._meta(course, aid)
+                    meta = entry["meta"]
+                    if entry.get("done"):
+                        continue
+                    now = snapshot(self.canvas, course, aid, meta)
+                    prev = entry.get("last")
+                    log(f"{meta['name']}: graded={now.get('graded')} state={now.get('workflowState')} "
+                        f"score={now.get('score')} posted={now.get('postedAt')} "
+                        f"feedback={now.get('hasFeedback')} total={now.get('total')}")
+                    if prev is None:
+                        log("  baseline stored")
+                        if now.get("graded"):
+                            events.append((HIGH, f"{meta['name']}: already marked (hidden) at watcher start",
+                                           course))
+                    else:
+                        for msg, pr in diff(prev, now, meta.get("points")):
+                            events.append((pr, f"{meta['name']}: {msg}", course))
+                    if now.get("total") is not None:
+                        totals.setdefault(course, now["total"])
+                    # once released, keep watching a while for feedback, then stop
+                    if now.get("score") is not None and not entry.get("releasedAt"):
+                        entry["releasedAt"] = time.time()
+                    if entry.get("releasedAt") and time.time() - entry["releasedAt"] > self.post_release_s:
+                        entry["done"] = True
+                        log(f"  released > {self.post_release_s // 60} min ago — no longer polling this one")
+                    entry["last"] = now
+
+                # The course total belongs to the course, not to each watched assignment:
+                # compare it once per course so 3 watches in one course give 1 line, not 3 alerts.
+                courses = self.state.setdefault("_courses", {})
+                for course, total in totals.items():
+                    c = courses.setdefault(str(course), {})
+                    if c.get("total") is not None and c["total"] != total:
+                        events.append((EMERGENCY,
+                                       f"{self._course_name(course)}: course total {c['total']}% → {total}%",
+                                       course))
+                    c["total"] = total
+                self.auth_alerted = False
+            finally:
+                # Send whatever was found even if a later request failed, then save, so a
+                # change is never recorded as "seen" without having been alerted.
+                if events:
+                    events.sort(key=lambda e: -e[0])  # most urgent first: it becomes the title
+                    notify(events[0][1], "\n".join(e[1] for e in events), priority=events[0][0],
+                           click_url=f"{self.base}/courses/{events[0][2]}/grades")
                 self._save()
-            self.auth_alerted = False
         except AuthError as e:
             log(str(e))
             reason = "Canvas session expired."
