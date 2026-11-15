@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Netflix - Watch Time Tracker
 // @namespace    https://github.com/Silverarmor/Userscripts
-// @version      1.1.0
+// @version      1.2.0
 // @description  Tracks real (wall-clock) time spent watching Netflix with a daily and per-title stats panel. Unaffected by playback speed changes.
 // @author       Silverarmor
 // @match        https://www.netflix.com/*
@@ -413,6 +413,11 @@
     exportButton.addEventListener("click", exportData);
     buttons.appendChild(exportButton);
 
+    const importButton = document.createElement("button");
+    importButton.textContent = "Import JSON";
+    importButton.addEventListener("click", importData);
+    buttons.appendChild(importButton);
+
     panelEl.appendChild(buttons);
   }
 
@@ -427,6 +432,68 @@
     row.appendChild(labelEl);
     row.appendChild(valueEl);
     parent.appendChild(row);
+  }
+
+  function importData() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.addEventListener("change", () => {
+      const file = input.files && input.files[0];
+      if (!file) {
+        return;
+      }
+      const reader = new FileReader();
+      reader.addEventListener("load", () => {
+        let imported;
+        try {
+          imported = JSON.parse(String(reader.result));
+        } catch (error) {
+          window.alert("Import failed: file is not valid JSON.");
+          return;
+        }
+        if (!imported || typeof imported !== "object" || !imported.days || typeof imported.days !== "object") {
+          window.alert('Import failed: expected an export containing a "days" object.');
+          return;
+        }
+        const dayCount = Object.keys(imported.days).length;
+        const totalSeconds = Object.values(imported.days).reduce(
+          (sum, day) => sum + (day && typeof day.seconds === "number" ? day.seconds : 0),
+          0
+        );
+        const ok = window.confirm(
+          `Import ${dayCount} day(s) / ${formatDuration(totalSeconds)} of watch time?\n\n` +
+            "Imported time is ADDED to existing totals (for migrating from another browser). " +
+            "Don't import the same file twice."
+        );
+        if (!ok) {
+          return;
+        }
+        mergeData(imported);
+        saveData();
+        renderPanel();
+      });
+      reader.readAsText(file);
+    });
+    input.click();
+  }
+
+  function mergeData(imported) {
+    for (const [key, day] of Object.entries(imported.days)) {
+      if (!day || typeof day !== "object" || typeof day.seconds !== "number") {
+        continue;
+      }
+      const bucket = dayBucket(key);
+      bucket.seconds += day.seconds;
+      if (day.titles && typeof day.titles === "object") {
+        for (const [title, seconds] of Object.entries(day.titles)) {
+          if (typeof seconds === "number") {
+            bucket.titles[title] = (bucket.titles[title] || 0) + seconds;
+          }
+        }
+      }
+    }
+    dirty = true;
   }
 
   function exportData() {
