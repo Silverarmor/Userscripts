@@ -6,3 +6,5 @@ cookies.tmp
 browser_state.json
 .venv/
 __pycache__/
+snooze.json
+held.json

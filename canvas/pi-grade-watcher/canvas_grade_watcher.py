@@ -28,6 +28,7 @@ Usage:
   canvas_grade_watcher.py --list 142383   # list a course's assignments + IDs
   canvas_grade_watcher.py --test          # send an emergency test alert to Pushover
   canvas_grade_watcher.py --status        # print the current state of each watch
+  canvas_grade_watcher.py --snooze 2h     # silence alerts (2h / 90m / 07:30 / off), recap after
 Config is read from env vars, or from the file given by --config
 (default: ./watcher.env next to this script).
 """
@@ -233,11 +234,91 @@ class Canvas:
 # ---------------------------------------------------------------- notifier (Pushover)
 
 EMERGENCY, HIGH, NORMAL = 2, 1, 0
+SNOOZE_FILE = HERE / "snooze.json"   # {"until": epoch seconds}, written by --snooze
+HELD_FILE = HERE / "held.json"       # alerts silenced during a snooze, recapped after it
 
 
-def notify(title: str, message: str, priority: int = EMERGENCY, click_url: str = None):
+def _parse_hhmm(t: str):
+    h, m = t.strip().split(":")
+    return int(h) * 60 + int(m)
+
+
+def quiet_reason(now: datetime = None):
+    """Why alerts are silenced right now ("snoozed until 07:30" / "quiet hours 23:00-07:00"), or None.
+
+    Pushover's own quiet hours / Do Not Disturb never silence emergency (priority 2)
+    alerts, so the watcher does it itself: while quiet, every alert is sent at
+    SNOOZE_PRIORITY (default -1 = no sound or vibration) and recapped afterwards.
+    """
+    now = now or datetime.now()
+    try:
+        until = json.loads(SNOOZE_FILE.read_text()).get("until", 0)
+        if until > now.timestamp():
+            return f"snoozed until {datetime.fromtimestamp(until).strftime('%a %H:%M')}"
+    except (OSError, ValueError):
+        pass
+    minute = now.hour * 60 + now.minute
+    for window in (cfg("QUIET_HOURS") or "").split(","):
+        if "-" not in window:
+            continue
+        start, end = (_parse_hhmm(x) for x in window.split("-", 1))
+        inside = start <= minute < end if start <= end else (minute >= start or minute < end)
+        if inside:
+            return f"quiet hours {window.strip()}"
+    return None
+
+
+def parse_snooze(arg: str, now: datetime = None) -> float:
+    """'2h', '90m', '1d', '45' (minutes), '07:30' (next time it's 07:30) -> epoch seconds."""
+    now = now or datetime.now()
+    a = arg.strip().lower()
+    if ":" in a:
+        mins = _parse_hhmm(a)
+        target = now.replace(hour=mins // 60, minute=mins % 60, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        return target.timestamp()
+    unit = {"m": 60, "h": 3600, "d": 86400}.get(a[-1:], None)
+    num = float(a[:-1] if unit else a)
+    return now.timestamp() + num * (unit or 60)
+
+
+def _held():
+    try:
+        return json.loads(HELD_FILE.read_text())
+    except (OSError, ValueError):
+        return []
+
+
+def flush_held():
+    """Once the quiet period is over, send ONE recap of what was silenced (priority >= HIGH)."""
+    held = _held()
+    if not held or quiet_reason():
+        return
+    top = max(h["priority"] for h in held)
+    lines = [f"{h['at']}  {h['title']}" for h in held]
+    title = (f"While snoozed: {held[0]['title']}" if len(held) == 1
+             else f"While snoozed: {len(held)} updates")
+    if notify(title, "\n".join(lines), priority=top, bypass_quiet=True,
+              click_url=held[-1].get("url")):
+        HELD_FILE.unlink(missing_ok=True)
+
+
+def notify(title: str, message: str, priority: int = EMERGENCY, click_url: str = None,
+           bypass_quiet: bool = False):
     """Send a Pushover alert. EMERGENCY repeats every PUSHOVER_RETRY seconds until
-    you tap Acknowledge (or PUSHOVER_EXPIRE passes). Returns True on success."""
+    you tap Acknowledge (or PUSHOVER_EXPIRE passes). Returns True on success.
+    While snoozed / in quiet hours (see quiet_reason) the alert is sent silently instead
+    and, if it mattered (HIGH or above), saved for a recap when the quiet period ends."""
+    quiet = None if bypass_quiet else quiet_reason()
+    if quiet:
+        if priority >= HIGH:
+            held = _held()
+            held.append({"title": title, "priority": priority, "url": click_url,
+                         "at": datetime.now().strftime("%a %H:%M")})
+            HELD_FILE.write_text(json.dumps(held, indent=2))
+        log(f"({quiet}: priority {priority} sent silently, recap later)")
+        priority = int(cfg("SNOOZE_PRIORITY", "-1"))
     log(f"ALERT (priority {priority}): {title} — {message}")
     token, user = cfg("PUSHOVER_TOKEN"), cfg("PUSHOVER_USER")
     if not (token and user):
@@ -708,6 +789,10 @@ class Watcher:
                 self.poll_once()
             except Exception as e:  # network blips, Canvas 5xx, etc.
                 log("poll error:", repr(e))
+            try:
+                flush_held()  # snooze / quiet hours just ended -> one recap of what was silenced
+            except Exception as e:
+                log("recap error:", repr(e))
             if self.watches and all(self.state.get(f"{c}:{a}", {}).get("done") for c, a in self.watches):
                 log("All watched assignments released. Exiting.")
                 return
@@ -729,8 +814,26 @@ def main():
                     help="log in through a visible browser window (needs a display)")
     ap.add_argument("--relogin", action="store_true",
                     help="run the headless automatic re-login now (what the service does)")
+    ap.add_argument("--snooze", metavar="FOR",
+                    help="silence alerts: 2h, 90m, 1d, 45 (minutes), 07:30 (until then), or off")
     args = ap.parse_args()
     load_env_file(Path(args.config))
+
+    if args.snooze:
+        if args.snooze.strip().lower() in ("off", "0", "stop", "cancel"):
+            SNOOZE_FILE.unlink(missing_ok=True)
+            print("Snooze off. Anything silenced is recapped on the next poll"
+                  + (f" (still in {quiet_reason()})." if quiet_reason() else "."), file=sys.stderr)
+            return
+        try:
+            until = parse_snooze(args.snooze)
+        except ValueError:
+            sys.exit(f"Can't read --snooze {args.snooze!r}: use 2h, 90m, 1d, 45 or 07:30")
+        SNOOZE_FILE.write_text(json.dumps({"until": until}))
+        print(f"Snoozed until {datetime.fromtimestamp(until).strftime('%a %d %b %H:%M')}. "
+              "Alerts arrive silently and are recapped afterwards. Undo: --snooze off",
+              file=sys.stderr)
+        return
 
     if args.browser_login or args.relogin:
         if not playwright_available():
@@ -759,7 +862,8 @@ def main():
 
     if args.test:
         ok = notify("Canvas grade watcher: test",
-                    "Emergency test — this repeats until you tap Acknowledge.", priority=EMERGENCY)
+                    "Emergency test — this repeats until you tap Acknowledge.", priority=EMERGENCY,
+                    bypass_quiet=True)
         sys.exit(0 if ok else 1)
 
     w = Watcher()
@@ -769,6 +873,8 @@ def main():
         return
     if args.status:
         print(json.dumps(w.state, indent=2))
+        print(f"Alerts: {quiet_reason() or 'normal'}; {len(_held())} silenced alert(s) waiting for recap",
+              file=sys.stderr)
         return
     if args.once:
         w.poll_once()

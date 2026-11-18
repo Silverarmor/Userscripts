@@ -87,6 +87,27 @@ so `git pull` never touches them.
    (iOS: enable Critical Alerts).
 4. `.venv/bin/python canvas_grade_watcher.py --test`. It keeps alerting until you acknowledge.
 
+## Silencing alerts (snooze / quiet hours)
+
+Pushover's own quiet hours and Do Not Disturb never silence **emergency** alerts, so the
+watcher does it itself. While silenced, every alert still arrives but at Pushover's quiet
+priority (no sound or vibration). When the quiet period ends you get **one** recap alert,
+at the highest priority that was silenced, listing everything important (high or
+emergency) you missed.
+
+- **One-off snooze**, runs in the background while the watcher keeps going (no restart needed):
+  ```bash
+  .venv/bin/python canvas_grade_watcher.py --snooze 2h      # also 90m, 1d, 45 (minutes)
+  .venv/bin/python canvas_grade_watcher.py --snooze 07:30   # until the next 07:30
+  .venv/bin/python canvas_grade_watcher.py --snooze off
+  ```
+- **Every day:** `QUIET_HOURS=23:00-07:00` in `watcher.env` (several windows:
+  `09:00-11:00,13:00-14:00`). This one needs a restart after editing.
+- `--status` shows whether alerts are currently silenced.
+- `--test` always rings, even while snoozed.
+- From your phone: the iOS Shortcuts action **Run Script Over SSH** (or any SSH app) can
+  run the `--snooze` command on the Pi with one tap.
+
 ## Login
 
 UoA disables Canvas access tokens, so the watcher uses a real login session. It's
@@ -174,3 +195,4 @@ pm2 logs canvas-grade-watcher
 | `--test` | emergency test alert |
 | `--once` | single poll |
 | `--status` | dump saved state (`state.json`) |
+| `--snooze 2h` / `07:30` / `off` | silence alerts for a while, recap afterwards |
