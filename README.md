@@ -16,6 +16,16 @@ This repo is mostly browser userscripts, but not everything here is a Tampermonk
 
 See Tampermonkey's FAQ entry on the Chrome `userScripts` requirement: [Q209](https://www.tampermonkey.net/faq.php?ext=dhdg&q=Q209).
 
+#### Reliable `@run-at document-start` injection
+
+Some scripts here (such as the Panopto custom captions script) must run before the page's own JavaScript, or they will intermittently fail. In Tampermonkey's default mode under Manifest V3, `@run-at document-start` is not honoured reliably, so switch injection modes:
+
+1. Make sure **Allow User Scripts** (or **Developer mode**) is enabled as described above — without it, Tampermonkey silently falls back to the slow injection path.
+2. Open Tampermonkey's **Settings** tab and set **Config mode** to **Advanced**.
+3. Under **Experimental**, set **Content Script API** to **UserScripts API Dynamic**. This replaces the old "Inject Mode: Instant" setting and is the only Chrome option with true `document-start` support.
+
+Known trade-off of Dynamic mode: Tampermonkey injects GM storage values as a snapshot that can lag one reload behind a fresh write ([tampermonkey#2123](https://github.com/Tampermonkey/tampermonkey/issues/2123)). The Panopto captions script works around this internally, but other scripts that write GM values and immediately reload may appear one reload out of date.
+
 ### Safari alternatives
 
 Safari users have a few options:
