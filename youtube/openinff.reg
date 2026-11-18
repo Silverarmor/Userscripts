@@ -1,0 +1,11 @@
+Windows Registry Editor Version 5.00
+
+; Registers the openinff: protocol used by youtube-open-in-firefox.user.js.
+; Edit the openinff.ps1 path below if this repo is not at C:\Programming\userscripts.
+
+[HKEY_CURRENT_USER\Software\Classes\openinff]
+@="URL:Open in Firefox"
+"URL Protocol"=""
+
+[HKEY_CURRENT_USER\Software\Classes\openinff\shell\open\command]
+@="powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"C:\\Programming\\userscripts\\youtube\\openinff.ps1\" \"%1\""
