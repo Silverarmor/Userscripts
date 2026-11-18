@@ -1,0 +1,12 @@
+Windows Registry Editor Version 5.00
+
+; Optional: stops Chrome asking "Open Windows PowerShell?" on every site the first
+; time an openinff: link is clicked there. Sets the AutoLaunchProtocolsFromOrigins
+; policy so all sites may open openinff: without a prompt. This is safe only because
+; openinff.ps1 ignores anything that isn't a YouTube link.
+; Chrome will show "Managed by your organization" while any policy is set.
+; Restart Chrome (or reload chrome://policy) after importing.
+; To undo, delete the AutoLaunchProtocolsFromOrigins value below.
+
+[HKEY_CURRENT_USER\Software\Policies\Google\Chrome]
+"AutoLaunchProtocolsFromOrigins"="[{\"protocol\":\"openinff\",\"allowed_origins\":[\"*\"]}]"
