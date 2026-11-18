@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube - Open Links in Firefox
 // @namespace    https://github.com/Silverarmor/Userscripts
-// @version      1.0.0
+// @version      1.1.0
 // @description  Opens clicked YouTube links in Firefox instead of Chrome, via the openinff: protocol handler (see youtube/openinff.reg). Shift+click opens the link normally.
 // @author       Silverarmor
 // @match        *://*/*
@@ -19,6 +19,32 @@
   const YOUTUBE_LINK =
     /^https?:\/\/((www\.|m\.|music\.)?youtube\.com\/(watch|shorts|live|playlist)|youtu\.be\/)/i;
 
+  function asYouTube(value) {
+    if (!value) return null;
+    let url = value.trim();
+    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+    return YOUTUBE_LINK.test(url) && !/\s|…/.test(url) ? url : null;
+  }
+
+  // Many sites (Gmail, Google search, X, Facebook, Reddit, YouTube descriptions)
+  // wrap links in a redirect URL, so also look in its query parameters and,
+  // failing that, the link text (e.g. X shows "youtu.be/..." over a t.co link).
+  function youtubeUrlFor(link) {
+    const direct = asYouTube(link.href);
+    if (direct) return direct;
+
+    try {
+      for (const value of new URL(link.href).searchParams.values()) {
+        const wrapped = asYouTube(value);
+        if (wrapped) return wrapped;
+      }
+    } catch (_) {
+      // Not a parseable URL; fall through to the link text.
+    }
+
+    return asYouTube(link.textContent);
+  }
+
   function findLink(event) {
     // composedPath() also finds links inside shadow DOM.
     for (const node of event.composedPath()) {
@@ -34,11 +60,12 @@
     if (event.type === "auxclick" && event.button !== 1) return;
 
     const link = findLink(event);
-    if (!link || !YOUTUBE_LINK.test(link.href)) return;
+    const url = link && youtubeUrlFor(link);
+    if (!url) return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
-    window.location.href = PROTOCOL + link.href;
+    window.location.href = PROTOCOL + url;
   }
 
   document.addEventListener("click", handleClick, true);
